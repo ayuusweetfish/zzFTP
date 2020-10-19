@@ -13,6 +13,8 @@ client *client_create(int sock_ctl)
 
   c->sock_dat_p = c->sock_dat = -1;
 
+  c->state = CLST_CONN;
+
   c->username = NULL;
   c->xferred_files_bytes = 0;
   c->xferred_files_num = 0;

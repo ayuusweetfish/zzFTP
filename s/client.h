@@ -10,6 +10,12 @@ typedef struct client_s {
   int sock_dat_p; // Socket for the data connection (passive)
   int sock_dat;   // Socket for the data connection
 
+  enum client_state_t {
+    CLST_CONN = 0,    // Connected
+    CLST_WAIT_PASS,   // USER entered, waiting for password
+    CLST_READY,       // Ready
+  } state;
+
   char *username;
   int xferred_files_bytes;
   int xferred_files_num;
