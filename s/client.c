@@ -1,5 +1,6 @@
 #include "client.h"
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -66,7 +67,7 @@ void client_run_loop(client *c)
     // Parse the verb and the argument
     const char *verb = cmd, *arg = "";
     char *p = cmd;
-    while (*p >= 'A' && *p <= 'Z') p++;
+    while ((*p = toupper(*p)) >= 'A' && *p <= 'Z') p++;
     if (*p != ' ' && *p != '\0') {
       send_mark(c->sock_ctl, 500,
         "The verb should be terminate the command line, "
