@@ -1,12 +1,25 @@
 #include "client.h"
 #include "auth.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #define mark(_code, _str) send_mark(c->sock_ctl, _code, _str)
+#define markf(_code, ...) do { \
+  char s[256]; \
+  snprintf(s, sizeof s, __VA_ARGS__); \
+  mark(_code, s); \
+} while (0)
+
+#define auth() do { \
+  if (c->state < CLST_READY) { \
+    mark(530, "Log in first."); \
+    return; \
+  } \
+} while (0)
 
 // Reference: RFC 954, 5.4, Command-Reply Sequences (pp. 48-52)
 
@@ -73,9 +86,42 @@ static void handler_PASS(client *c, const char *arg)
   }
 
   c->state = CLST_READY;
-  char s[256];
-  snprintf(s, sizeof s, "Logged in. Welcome, %s.", c->username);
-  mark(230, s);
+  markf(230, "Logged in. Welcome, %s.", c->username);
+}
+
+static void handler_PORT(client *c, const char *arg)
+{
+  auth();
+
+  unsigned x[6];
+  if (sscanf(arg, "%u,%u,%u,%u,%u,%u",
+      &x[0], &x[1], &x[2], &x[3], &x[4], &x[5]) != 6) {
+    mark(501, "Incorrect address format.");
+    return;
+  }
+  for (int i = 0; i < 6; i++) if (x[0] >= 256) {
+    mark(501, "Incorrect address format.");
+    return;
+  }
+
+  c->state = CLST_PORT;
+  for (int i = 0; i < 4; i++) c->addr[i] = x[i];
+  c->port = x[4] * 256 + x[5];
+  markf(200, "Will connect to %u.%u.%u.%u:%u\n",
+    x[0], x[1], x[2], x[3], c->port);
+}
+
+static void handler_PASV(client *c, const char *arg)
+{
+  auth();
+
+  uint8_t addr[6];
+  int fd;
+  ephemeral(addr, &fd);
+
+  markf(227, "Entering Passive Mode ("
+    "%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8
+  ")", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
 }
 
 // Process
@@ -89,6 +135,8 @@ void process_command(client *c, const char *verb, const char *arg)
   def_cmd(TYPE)
   def_cmd(USER)
   def_cmd(PASS)
+  def_cmd(PORT)
+  def_cmd(PASV)
 
 #undef def_cmd
 

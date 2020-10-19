@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 // Prints errno with a message to stderr and exits the program
 void panic(const char *msg);
@@ -36,5 +37,9 @@ void rlb_deinit(rlb *b);
 // The message may or may not be terminated with an LF
 // Either way, the sent mark is terminated with CR-LF
 void send_mark(int fd, int code, const char *msg);
+
+// Get an ephemeral port and a passive socket on it
+// Returns 0 on success and negative integers on errors
+int ephemeral(uint8_t o_addr[6], int *o_sock_fd);
 
 #endif
