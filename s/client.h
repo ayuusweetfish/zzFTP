@@ -1,8 +1,12 @@
 #ifndef zzftp__client_h
 #define zzftp__client_h
 
+#include "io_utils.h"
+
 typedef struct client_s {
   int sock_ctl;   // Socket for the control connection
+  rlb buf_ctl;    // Buffer for the control connection
+
   int sock_dat_p; // Socket for the data connection (passive)
   int sock_dat;   // Socket for the data connection
 

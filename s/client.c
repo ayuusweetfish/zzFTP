@@ -8,7 +8,10 @@
 client *client_create(int sock_ctl)
 {
   client *c = malloc(sizeof(client));
+
   c->sock_ctl = sock_ctl;
+  rlb_init(&c->buf_ctl, sock_ctl);
+
   c->sock_dat_p = c->sock_dat = -1;
 
   c->username = NULL;
@@ -20,7 +23,9 @@ client *client_create(int sock_ctl)
 
 void client_close(client *c)
 {
+  rlb_deinit(&c->buf_ctl);
   close(c->sock_ctl);
+
   if (c->sock_dat_p >= 0) close(c->sock_dat_p);
   if (c->sock_dat >= 0) close(c->sock_dat);
 
@@ -31,9 +36,11 @@ void client_close(client *c)
 
 void client_process(client *c)
 {
-  char s[64];
-  size_t l = read_all(c->sock_ctl, s, sizeof(s) - 1);
-  s[l] = '\0';
-  puts(s);
-  write_all(c->sock_ctl, "qwq\n", 4);
+  char s[8], t[64];
+  size_t l;
+  do {
+    l = rlb_read_line(&c->buf_ctl, s, sizeof s);
+    snprintf(t, sizeof t, "%d \"%s\"\n", (int)l, s);
+    write_all(c->sock_ctl, t, strlen(t));
+  } while (l != -1);
 }
