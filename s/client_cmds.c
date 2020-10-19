@@ -1,10 +1,14 @@
 #include "client.h"
+#include "auth.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define mark(_code, _str) send_mark(c->sock_ctl, _code, _str)
+
+// Reference: RFC 954, 5.4, Command-Reply Sequences (pp. 48-52)
 
 static void handler_SYST(client *c, const char *arg)
 {
@@ -19,34 +23,59 @@ static void handler_TYPE(client *c, const char *arg)
 
 static void handler_USER(client *c, const char *arg)
 {
+  if (c->state >= CLST_READY) {
+    mark(503, "Already logged in.");
+    return;
+  }
+
+  c->state = CLST_WAIT_PASS;
+  if (c->username != NULL) free(c->username);
+
   if (strcmp(arg, "anonymous") == 0) {
-    c->state = CLST_WAIT_PASS;
     c->username = NULL;
     mark(331, "Logging in anonymously. "
       "Send your complete e-mail address as password.");
   } else {
-    // TODO
-    mark(504, "This server allows anonymous access only.");
+    c->username = strdup(arg);
+    mark(331, "Please specify the password.");
   }
 }
 
 static void handler_PASS(client *c, const char *arg)
 {
-  if (c->state != CLST_WAIT_PASS) {
+  if (c->state < CLST_WAIT_PASS) {
     mark(503, "Specify your username first.");
     return;
+  } else if (c->state >= CLST_READY) {
+    mark(503, "Already logged in.");
+    return;
   }
+
   if (c->username == NULL) {
     // Anonymous login
-    // Can be replaced with asprintf
-    int len = snprintf(NULL, 0, "anon/%s", arg);
+    if (strlen(arg) > 64) {
+      mark(530, "Password too long (more than 64 characters).");
+      return;
+    }
+    // Create anonymous username (can be replaced with asprintf)
+    int len = snprintf(NULL, 0, "anonymous/%s", arg);
     char *username = malloc(len + 1);
-    snprintf(username, len + 1, "anon/%s", arg);
+    snprintf(username, len + 1, "anonymous/%s", arg);
     c->username = username;
-    char s[256];
-    snprintf(s, sizeof s, "Logged in. Welcome, %s.", username);
-    mark(230, s);
+  } else {
+    // Existing user
+    if (!user_auth(c->username, arg)) {
+      usleep(1000000);  // Delay before replying
+      mark(530, "Incorrect username/password.");
+      return;
+    }
+    // Log in
   }
+
+  c->state = CLST_READY;
+  char s[256];
+  snprintf(s, sizeof s, "Logged in. Welcome, %s.", c->username);
+  mark(230, s);
 }
 
 // Process
