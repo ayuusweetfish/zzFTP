@@ -1,4 +1,5 @@
 #include "io_utils.h"
+#include "client.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -38,8 +39,9 @@ int main(int argc, char *argv[])
     if (conn_fd == -1)
       panic("accept() failed");
 
-    write_all(conn_fd, "qwq\n", 4);
-    close(conn_fd);
+    client *c = client_create(conn_fd);
+    client_process(c);
+    client_close(c);
   }
 
   return 0;
