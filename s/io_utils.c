@@ -17,17 +17,34 @@ void warn(const char *msg)
   fprintf(stderr, "warn  | %s: errno = %d (%s)\n", msg, errno, strerror(errno));
 }
 
+size_t read_all(int fd, void *buf, size_t len)
+{
+  size_t result, tot = 0;
+  while (tot < len) {
+    result = read(fd, buf, len - tot);
+    if (result == -1) {
+      warn("write() failed");
+      return tot;
+    } else if (result == 0) {
+      break;
+    }
+    buf += result;
+    tot += result;
+  }
+  return tot;
+}
+
 size_t write_all(int fd, const void *buf, size_t len)
 {
-  ssize_t ret;
+  ssize_t result;
   while (len != 0) {
-    ret = write(fd, buf, len);
-    if (ret == -1) {
+    result = write(fd, buf, len);
+    if (result == -1) {
       warn("write() failed");
       return len;
     }
-    buf += ret;
-    len -= ret;
+    buf += result;
+    len -= result;
   }
   return 0;
 }

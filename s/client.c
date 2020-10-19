@@ -31,5 +31,9 @@ void client_close(client *c)
 
 void client_process(client *c)
 {
+  char s[64];
+  size_t l = read_all(c->sock_ctl, s, sizeof(s) - 1);
+  s[l] = '\0';
+  puts(s);
   write_all(c->sock_ctl, "qwq\n", 4);
 }
