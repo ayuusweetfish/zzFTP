@@ -120,3 +120,26 @@ void rlb_deinit(rlb *b)
 {
   free(b->buf);
 }
+
+void send_mark(int fd, int code, const char *msg)
+{
+  char pfx[4];
+  pfx[0] = '0' + (code / 100) % 10;
+  pfx[1] = '0' + (code / 10) % 10;
+  pfx[2] = '0' + code % 10;
+
+  while (1) {
+    const char *p = strchr(msg, '\n');
+    // No more LF's, or terminating LF
+    bool last_line = (p == NULL || *(p + 1) == '\0');
+    size_t line_len = (p == NULL ? strlen(msg) : (p - msg));
+
+    pfx[3] = (last_line ? ' ' : '-');
+    write_all(fd, pfx, 4);        // Prefix
+    write_all(fd, msg, line_len); // Line
+    write_all(fd, "\r\n", 2);     // EOL
+
+    msg = p + 1;
+    if (last_line) break;
+  }
+}

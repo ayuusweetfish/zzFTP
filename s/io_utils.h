@@ -32,4 +32,9 @@ size_t rlb_read_line(rlb *b, char *buf, size_t size);
 // Releases the resources used, does not touch the descriptor
 void rlb_deinit(rlb *b);
 
+// Sends a multiline mark, replacing all LF characters with CR-LF diagraphs
+// The message may or may not be terminated with an LF
+// Either way, the sent mark is terminated with CR-LF
+void send_mark(int fd, int code, const char *msg);
+
 #endif

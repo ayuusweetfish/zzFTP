@@ -18,6 +18,8 @@ typedef struct client_s {
 client *client_create(int sock_ctl);
 void client_close(client *c);
 
-void client_process(client *c);
+void client_run_loop(client *c);
+
+void process_command(client *c, const char *verb, const char *arg);
 
 #endif

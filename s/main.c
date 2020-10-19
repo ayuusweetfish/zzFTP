@@ -1,6 +1,7 @@
 #include "io_utils.h"
 #include "client.h"
 
+#include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -10,6 +11,8 @@
 
 int main(int argc, char *argv[])
 {
+  signal(SIGPIPE, SIG_IGN);
+
   // Allocate socket
   int sock_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (sock_fd == -1)
@@ -40,7 +43,7 @@ int main(int argc, char *argv[])
       panic("accept() failed");
 
     client *c = client_create(conn_fd);
-    client_process(c);
+    client_run_loop(c);
     client_close(c);
   }
 
