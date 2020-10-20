@@ -113,6 +113,8 @@ static cmd_result handler_PASS(client *c, const char *arg)
   return CMD_RESULT_DONE;
 }
 
+#include "client_xfer_thr.h"
+
 static cmd_result handler_PORT(client *c, const char *arg)
 {
   ignore_if_xfer();
@@ -129,92 +131,17 @@ static cmd_result handler_PORT(client *c, const char *arg)
     return CMD_RESULT_DONE;
   }
 
+  // Create thread
+  crit({ c->thr_dat_running = true; });
+  if (pthread_create(&c->thr_dat, NULL, &active_data, c) != 0)
+    disconnect("Cannot enter port mode: pthread_create() failed.");
+
   c->state = CLST_PORT;
   for (int i = 0; i < 4; i++) c->addr[i] = x[i];
   c->port = x[4] * 256 + x[5];
   markf(200, "Will connect to %u.%u.%u.%u:%u\n",
     x[0], x[1], x[2], x[3], c->port);
   return CMD_RESULT_DONE;
-}
-
-struct passive_data_arg {
-  int sock_fd;
-  client *c;
-};
-
-static void *passive_data(void *arg)
-{
-  int sock_fd = ((struct passive_data_arg *)arg)->sock_fd;
-  client *c = ((struct passive_data_arg *)arg)->c;
-  free(arg);
-
-  int conn_fd = -1;
-  FILE *fp = NULL;
-  enum dat_type_t dat_type = DATA_UNDEFINED;
-
-#ifndef SLOW_DATA
-  #define BUF_SIZE 1024
-#else
-  #define BUF_SIZE 8
-#endif
-  void *buf = malloc(BUF_SIZE);
-
-  while (1) {
-    bool running;
-    crit({ running = c->thr_dat_running; });
-    if (!running) break;
-
-    if (conn_fd == -1) {
-      if ((conn_fd = accept(sock_fd, NULL, NULL)) == -1) {
-        if (errno == EAGAIN) {
-          usleep(1000000);
-          continue;
-        } else {
-          panic("accept() failed");
-        }
-      }
-    }
-
-    if (conn_fd != -1) {
-      if (fp == NULL)
-        crit({ fp = c->dat_fp; dat_type = c->dat_type; });
-      if (fp != NULL) {
-        if (dat_type == DATA_SEND_FILE || dat_type == DATA_SEND_PIPE) {
-          size_t bytes_read = fread(buf, 1, BUF_SIZE, fp);
-          if (bytes_read > 0) {
-            write_all(conn_fd, buf, bytes_read);
-          #ifdef SLOW_DATA
-            usleep(300000);
-          #endif
-          }
-        } else {
-          puts("TODO");
-        }
-        if (feof(fp)) {
-          mark(226, "Transfer complete.");
-          break;
-        } else if (ferror(fp) != 0) {
-          mark(451, "Transfer aborted by internal I/O error.");
-          break;
-        }
-      }
-    }
-  }
-
-  free(buf);
-  if (fp != NULL) {
-    if (dat_type == DATA_SEND_PIPE) pclose(fp);
-    else fclose(fp);
-  }
-  if (conn_fd != -1) close(conn_fd);
-  close(sock_fd);
-
-  crit({ c->dat_fp = NULL; });
-  c->state = CLST_READY;
-
-  info("data thread terminated");
-  return NULL;
-#undef BUF_SIZE
 }
 
 static cmd_result handler_PASV(client *c, const char *arg)
@@ -255,7 +182,7 @@ static cmd_result handler_LIST(client *c, const char *arg)
     return CMD_RESULT_DONE;
   }
 
-  FILE *f = popen("ls /tmp", "r");
+  FILE *f = popen("ls -lH /tmp", "r");
   if (f == NULL) {
     mark(550, "Internal error. Cannot list.");
     return CMD_RESULT_DONE;
