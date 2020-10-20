@@ -33,6 +33,9 @@
   } \
 } while (0)
 
+#define signal_file(_ty) \
+  crit({ c->dat_fp = f; c->dat_type = _ty; pthread_cond_signal(&c->cond_dat); })
+
 #define disconnect(_str) do { \
   mark(421, _str " Shutting down connection."); \
   return CMD_RESULT_SHUTDOWN; \
@@ -323,7 +326,7 @@ static cmd_result handler_LIST(client *c, const char *arg)
     return CMD_RESULT_DONE;
   }
 
-  crit({ c->dat_fp = f; c->dat_type = DATA_SEND_PIPE; });
+  signal_file(DATA_SEND_PIPE);
 
   mark(150, "Directory listing is being sent over the data connection.");
   return CMD_RESULT_DONE;
@@ -347,7 +350,7 @@ static cmd_result handler_RETR(client *c, const char *arg)
     return (free(d), CMD_RESULT_DONE);
   }
 
-  crit({ c->dat_fp = f; c->dat_type = DATA_SEND_FILE; });
+  signal_file(DATA_SEND_FILE);
 
   mark(150, "File contents are being sent over the data connection.");
   return (free(d), CMD_RESULT_DONE);
@@ -367,7 +370,7 @@ static cmd_result handler_STOR(client *c, const char *arg)
     return (free(d), CMD_RESULT_DONE);
   }
 
-  crit({ c->dat_fp = f; c->dat_type = DATA_RECV_FILE; });
+  signal_file(DATA_RECV_FILE);
 
   mark(150, "Send file contents over the data connection.");
   return (free(d), CMD_RESULT_DONE);

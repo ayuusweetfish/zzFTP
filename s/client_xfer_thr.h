@@ -6,6 +6,12 @@
 
 #include <poll.h>
 
+static inline void double_and_limit(int *x, int limit)
+{
+  int new_x = (*x) * 2;
+  *x = (new_x < limit ? new_x : limit);
+}
+
 static inline bool process_block(
   client *c,
   int conn_fd, enum dat_type_t dat_type, FILE *fp, void *buf)
@@ -73,42 +79,40 @@ static void *active_data(void *arg)
   enum dat_type_t dat_type = DATA_UNDEFINED;
   void *buf = malloc(BUF_SIZE);
 
+  // Wait for the file
+  crit({
+    pthread_cond_wait(&c->cond_dat, &c->mutex_dat);
+    fp = c->dat_fp; dat_type = c->dat_type;
+  });
+
+  // Establish connection
+  conn_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (conn_fd == -1) {
+    mark(425, "Cannot establish connection: socket() failed.");
+    goto _cleanup;
+  }
+
+  // Fill in the address from client record
+  struct sockaddr_in addr = { 0 };
+  addr.sin_family = AF_INET;
+  memcpy(&addr.sin_addr.s_addr, c->addr, 4);
+  addr.sin_port = htons(c->port);
+  // TODO: Connect with a timeout
+  if (connect(conn_fd, (struct sockaddr *)&addr, sizeof addr) == -1) {
+    mark(425, "Cannot establish connection.");
+    goto _cleanup;
+  }
+  fcntl(conn_fd, F_SETFL, fcntl(conn_fd, F_GETFL, 0) | O_NONBLOCK);
+
   while (1) {
     bool running;
     crit({ running = c->thr_dat_running; });
     if (!running) break;
 
-    if (fp == NULL) {
-      crit({ fp = c->dat_fp; dat_type = c->dat_type; });
-      if (fp != NULL) {
-        // Establish connection
-        conn_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (conn_fd == -1) {
-          mark(425, "Cannot establish connection: socket() failed.");
-          break;
-        }
-        // fcntl(conn_fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1 ||
-        // Fill in the address from client record
-        struct sockaddr_in addr = { 0 };
-        addr.sin_family = AF_INET;
-        memcpy(&addr.sin_addr.s_addr, c->addr, 4);
-        addr.sin_port = htons(c->port);
-        // TODO: Connect with a timeout
-        if (connect(conn_fd, (struct sockaddr *)&addr, sizeof addr) == -1) {
-          mark(425, "Cannot establish connection.");
-          break;
-        }
-        fcntl(conn_fd, F_SETFL, fcntl(conn_fd, F_GETFL, 0) | O_NONBLOCK);
-      } else {
-        usleep(1000000);  // TODO: Use pthread_cond
-        continue;
-      }
-    }
-
-    if (fp != NULL)
-      if (!process_block(c, conn_fd, dat_type, fp, buf)) break;
+    if (!process_block(c, conn_fd, dat_type, fp, buf)) break;
   }
 
+_cleanup:
   cleanup(c, conn_fd, dat_type, fp, buf);
   return NULL;
 }
@@ -131,6 +135,8 @@ static void *passive_data(void *arg)
   enum dat_type_t dat_type = DATA_UNDEFINED;
   void *buf = malloc(BUF_SIZE);
 
+  int accept_sleep = 1000;
+
   while (1) {
     bool running;
     crit({ running = c->thr_dat_running; });
@@ -139,7 +145,8 @@ static void *passive_data(void *arg)
     if (conn_fd == -1) {
       if ((conn_fd = accept(sock_fd, NULL, NULL)) == -1) {
         if (errno == EAGAIN) {
-          usleep(1000000);
+          usleep(accept_sleep);
+          double_and_limit(&accept_sleep, 1000000);
           continue;
         } else {
           panic("accept() failed");
