@@ -5,6 +5,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <sys/socket.h>
+
 client *client_create(int sock_ctl)
 {
   client *c = malloc(sizeof(client));
@@ -26,6 +28,7 @@ client *client_create(int sock_ctl)
 void client_close(client *c)
 {
   rlb_deinit(&c->buf_ctl);
+  shutdown(c->sock_ctl, SHUT_RDWR);
   close(c->sock_ctl);
 
   if (c->sock_dat_p >= 0) close(c->sock_dat_p);
@@ -79,8 +82,8 @@ void client_run_loop(client *c)
       arg = p + 1;
     }
 
-    if (strcmp(verb, "QUIT") == 0) break;
-    process_command(c, verb, arg);
+    if (process_command(c, verb, arg) == CMD_RESULT_SHUTDOWN)
+      break;
   }
 
   send_mark(c->sock_ctl, 221, GOODBYE_MSG);

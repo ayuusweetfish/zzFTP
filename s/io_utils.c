@@ -171,5 +171,6 @@ int ephemeral(int sock_conn, uint8_t o_addr[6], int *o_sock_fd)
   getsockname(sock_conn, (struct sockaddr *)&addr, &addr_len);
   memcpy(o_addr + 0, &addr.sin_addr.s_addr, 4);
 
+  *o_sock_fd = sock_eph;
   return 0;
 }

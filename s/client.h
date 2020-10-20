@@ -36,6 +36,11 @@ void client_close(client *c);
 
 void client_run_loop(client *c);
 
-void process_command(client *c, const char *verb, const char *arg);
+typedef enum cmd_result_e {
+  CMD_RESULT_DONE,
+  CMD_RESULT_SHUTDOWN,
+} cmd_result;
+
+cmd_result process_command(client *c, const char *verb, const char *arg);
 
 #endif
