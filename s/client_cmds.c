@@ -26,6 +26,13 @@
 #define auth() do { } while (0)
 #endif
 
+#define data() do { \
+  if (c->state != CLST_PORT && c->state != CLST_PASV) { \
+    mark(425, "Use PORT or PASV first."); \
+    return CMD_RESULT_DONE; \
+  } \
+} while (0)
+
 #define disconnect(_str) do { \
   mark(421, _str " Shutting down connection."); \
   return CMD_RESULT_SHUTDOWN; \
@@ -190,7 +197,7 @@ static cmd_result handler_CWD(client *c, const char *arg)
 
   char *d; full_path(d);
   if (!path_exists(d, PATH_REQUIREMENT_DIR)) {
-    markf(550, "Path <%s> does not exist.", d);
+    markf(550, "Directory <%s> does not exist.", d);
     return (free(d), CMD_RESULT_DONE);
   }
 
@@ -308,10 +315,7 @@ static cmd_result handler_LIST(client *c, const char *arg)
 {
   ignore_if_xfer();
   auth();
-  if (c->state != CLST_PORT && c->state != CLST_PASV) {
-    mark(425, "Use PORT or PASV first.");
-    return CMD_RESULT_DONE;
-  }
+  data();
 
   FILE *f = popen("ls -lH", "r");
   if (f == NULL) {
@@ -323,6 +327,30 @@ static cmd_result handler_LIST(client *c, const char *arg)
 
   mark(150, "Directory listing is being sent over the data connection.");
   return CMD_RESULT_DONE;
+}
+
+static cmd_result handler_RETR(client *c, const char *arg)
+{
+  ignore_if_xfer();
+  auth();
+  data();
+
+  char *d; full_path(d);
+  if (!path_exists(d, PATH_REQUIREMENT_REGULAR)) {
+    markf(550, "File <%s> does not exist.", d);
+    return (free(d), CMD_RESULT_DONE);
+  }
+
+  FILE *f = fopen(d + 1, "r");
+  if (f == NULL) {
+    mark(550, "Internal error. Cannot retrieve file.");
+    return (free(d), CMD_RESULT_DONE);
+  }
+
+  crit({ c->dat_fp = f; c->dat_type = DATA_SEND_FILE; });
+
+  mark(150, "File contents are being sent over the data connection.");
+  return (free(d), CMD_RESULT_DONE);
 }
 
 static cmd_result handler_ABOR(client *c, const char *arg)
@@ -357,6 +385,7 @@ cmd_result process_command(client *c, const char *verb, const char *arg)
   def_cmd(RNFR)
   def_cmd(RNTO)
   def_cmd(LIST)
+  def_cmd(RETR)
   def_cmd(ABOR)
 
 #undef def_cmd
