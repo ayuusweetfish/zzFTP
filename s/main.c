@@ -1,13 +1,26 @@
 #include "io_utils.h"
 #include "client.h"
 
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+
+void *serve_client(void *arg)
+{
+  int conn_fd = *(int *)arg;
+  free(arg);
+
+  client *c = client_create(conn_fd);
+  client_run_loop(c);
+  client_close(c);
+  return NULL;
+}
 
 int main(int argc, char *argv[])
 {
@@ -43,9 +56,16 @@ int main(int argc, char *argv[])
     if (conn_fd == -1)
       panic("accept() failed");
 
-    client *c = client_create(conn_fd);
-    client_run_loop(c);
-    client_close(c);
+    pthread_t thr;
+    int *conn_fd_container = malloc(sizeof(int));
+    *conn_fd_container = conn_fd;
+    if (pthread_create(&thr, NULL, &serve_client, conn_fd_container) != 0) {
+      warn("cannot serve more clients");
+      close(conn_fd);
+      free(conn_fd_container);
+      continue;
+    }
+    pthread_detach(thr);
   }
 
   return 0;
