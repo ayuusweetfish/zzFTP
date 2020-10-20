@@ -24,6 +24,8 @@ typedef struct client_s {
   int xferred_files_bytes;
   int xferred_files_num;
 
+  char *wd;
+
   // Port mode: client address and port
   // Passive mode: local address and port
   uint8_t addr[4];

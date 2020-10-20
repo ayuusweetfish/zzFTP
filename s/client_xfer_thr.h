@@ -72,10 +72,13 @@ static void *active_data(void *arg)
           mark(425, "Cannot establish connection: socket() failed.");
           break;
         }
+        // fcntl(conn_fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1 ||
+        // Fill in the address from client record
         struct sockaddr_in addr = { 0 };
         addr.sin_family = AF_INET;
         memcpy(&addr.sin_addr.s_addr, c->addr, 4);
         addr.sin_port = htons(c->port);
+        // TODO: Connect with a timeout
         if (connect(conn_fd, (struct sockaddr *)&addr, sizeof addr) == -1) {
           mark(425, "Cannot establish connection.");
           break;

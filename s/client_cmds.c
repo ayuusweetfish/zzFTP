@@ -182,7 +182,7 @@ static cmd_result handler_LIST(client *c, const char *arg)
     return CMD_RESULT_DONE;
   }
 
-  FILE *f = popen("ls -lH /tmp", "r");
+  FILE *f = popen("ls -lH", "r");
   if (f == NULL) {
     mark(550, "Internal error. Cannot list.");
     return CMD_RESULT_DONE;
@@ -197,7 +197,7 @@ static cmd_result handler_LIST(client *c, const char *arg)
 static cmd_result handler_ABOR(client *c, const char *arg)
 {
   if (client_xfer_in_progress(c)) {
-    crit({ c->thr_dat_running = false; });
+    client_close_threads(c);
     mark(226, "Transfer aborted.");
   } else {
     mark(225, "No transfer in progress.");

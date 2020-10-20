@@ -11,6 +11,7 @@
 
 int main(int argc, char *argv[])
 {
+  chdir("/tmp");
   signal(SIGPIPE, SIG_IGN);
 
   // Allocate socket
