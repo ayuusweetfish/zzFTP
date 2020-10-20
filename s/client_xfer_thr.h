@@ -4,6 +4,8 @@
   #define BUF_SIZE 8
 #endif
 
+#include <poll.h>
+
 static inline bool process_block(
   client *c,
   int conn_fd, enum dat_type_t dat_type, FILE *fp, void *buf)
@@ -148,8 +150,17 @@ static void *passive_data(void *arg)
     if (conn_fd != -1) {
       if (fp == NULL)
         crit({ fp = c->dat_fp; dat_type = c->dat_type; });
-      if (fp != NULL)
+      if (fp != NULL) {
         if (!process_block(c, conn_fd, dat_type, fp, buf)) break;
+      } else {
+        // Connected and no file present. Detect disconnection.
+        struct pollfd poll_fd;
+        poll_fd.fd = conn_fd;
+        poll_fd.events = POLLIN | POLLHUP;
+        poll_fd.revents = 0;
+        if (poll(&poll_fd, 1, 100) > 0 && (poll_fd.revents & POLLHUP))
+          conn_fd = -1;
+      }
     }
   }
 
