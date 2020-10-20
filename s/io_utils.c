@@ -32,7 +32,7 @@ size_t read_all(int fd, void *buf, size_t len)
   while (tot < len) {
     result = read(fd, buf, len - tot);
     if (result == -1) {
-      warn("write() failed");
+      warn("read() failed");
       return tot;
     } else if (result == 0) {
       break;

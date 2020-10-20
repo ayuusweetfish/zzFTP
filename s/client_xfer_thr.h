@@ -4,10 +4,11 @@
   #define BUF_SIZE 8
 #endif
 
-static inline bool write_block(
+static inline bool process_block(
   client *c,
   int conn_fd, enum dat_type_t dat_type, FILE *fp, void *buf)
 {
+  bool xfer_complete;
   if (dat_type == DATA_SEND_FILE || dat_type == DATA_SEND_PIPE) {
     size_t bytes_read = fread(buf, 1, BUF_SIZE, fp);
     if (bytes_read > 0) {
@@ -16,10 +17,22 @@ static inline bool write_block(
       usleep(300000);
     #endif
     }
-  } else {
-    puts("TODO");
+    xfer_complete = feof(fp);
+  } else /* if (dat_type == DATA_RECV_FILE) */ {
+    ssize_t bytes_read = read(conn_fd, buf, BUF_SIZE);
+    if (bytes_read > 0)
+      fwrite(buf, 1, bytes_read, fp);
+    else if (bytes_read == -1) {
+      if (errno == EAGAIN) {
+        usleep(1000000);
+      } else {
+        warn("read() failed");
+        bytes_read = 0;   // Treat transfer as complete
+      }
+    }
+    xfer_complete = (bytes_read == 0);
   }
-  if (feof(fp)) {
+  if (xfer_complete) {
     mark(226, "Transfer complete.");
     return false;
   } else if (ferror(fp) != 0) {
@@ -83,6 +96,7 @@ static void *active_data(void *arg)
           mark(425, "Cannot establish connection.");
           break;
         }
+        fcntl(conn_fd, F_SETFL, fcntl(conn_fd, F_GETFL, 0) | O_NONBLOCK);
       } else {
         usleep(1000000);  // TODO: Use pthread_cond
         continue;
@@ -90,7 +104,7 @@ static void *active_data(void *arg)
     }
 
     if (fp != NULL)
-      if (!write_block(c, conn_fd, dat_type, fp, buf)) break;
+      if (!process_block(c, conn_fd, dat_type, fp, buf)) break;
   }
 
   cleanup(c, conn_fd, dat_type, fp, buf);
@@ -135,7 +149,7 @@ static void *passive_data(void *arg)
       if (fp == NULL)
         crit({ fp = c->dat_fp; dat_type = c->dat_type; });
       if (fp != NULL)
-        if (!write_block(c, conn_fd, dat_type, fp, buf)) break;
+        if (!process_block(c, conn_fd, dat_type, fp, buf)) break;
     }
   }
 

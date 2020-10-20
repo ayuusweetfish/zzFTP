@@ -353,11 +353,34 @@ static cmd_result handler_RETR(client *c, const char *arg)
   return (free(d), CMD_RESULT_DONE);
 }
 
+static cmd_result handler_STOR(client *c, const char *arg)
+{
+  ignore_if_xfer();
+  auth();
+  data();
+
+  char *d; full_path(d);
+
+  FILE *f = fopen(d + 1, "w");
+  if (f == NULL) {
+    mark(550, "Cannot write to file.");
+    return (free(d), CMD_RESULT_DONE);
+  }
+
+  crit({ c->dat_fp = f; c->dat_type = DATA_RECV_FILE; });
+
+  mark(150, "Send file contents over the data connection.");
+  return (free(d), CMD_RESULT_DONE);
+}
+
 static cmd_result handler_ABOR(client *c, const char *arg)
 {
   if (client_xfer_in_progress(c)) {
+    enum dat_type_t dat_type = c->dat_type;
     client_close_threads(c);
-    mark(226, "Transfer aborted.");
+    mark(226, dat_type == DATA_RECV_FILE ?
+      "Transfer aborted. Partial data written." :
+      "Transfer aborted.");
   } else {
     mark(225, "No transfer in progress.");
   }
@@ -386,6 +409,7 @@ cmd_result process_command(client *c, const char *verb, const char *arg)
   def_cmd(RNTO)
   def_cmd(LIST)
   def_cmd(RETR)
+  def_cmd(STOR)
   def_cmd(ABOR)
 
 #undef def_cmd
