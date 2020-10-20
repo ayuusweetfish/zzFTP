@@ -1,6 +1,7 @@
 #include "client.h"
 
 #include <ctype.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -14,27 +15,30 @@ client *client_create(int sock_ctl)
   c->sock_ctl = sock_ctl;
   rlb_init(&c->buf_ctl, sock_ctl);
 
-  c->sock_dat_p = c->sock_dat = -1;
-
   c->state = CLST_CONN;
 
   c->username = NULL;
   c->xferred_files_bytes = 0;
   c->xferred_files_num = 0;
 
+  pthread_mutex_init(&c->mutex_dat, NULL);
+  pthread_cond_init(&c->cond_dat, NULL);
+  c->thr_dat_running = false;
+
   return c;
 }
 
 void client_close(client *c)
 {
+  client_close_threads(c);
+
   rlb_deinit(&c->buf_ctl);
   shutdown(c->sock_ctl, SHUT_RDWR);
   close(c->sock_ctl);
 
-  if (c->sock_dat_p >= 0) close(c->sock_dat_p);
-  if (c->sock_dat >= 0) close(c->sock_dat);
-
   if (c->username != NULL) free(c->username);
+
+  pthread_mutex_destroy(&c->mutex_dat);
 
   free(c);
 }
@@ -87,4 +91,19 @@ void client_run_loop(client *c)
   }
 
   send_mark(c->sock_ctl, 221, GOODBYE_MSG);
+}
+
+void client_close_threads(client *c)
+{
+  pthread_mutex_lock(&c->mutex_dat);
+  bool running = c->thr_dat_running;
+  pthread_mutex_unlock(&c->mutex_dat);
+
+  if (running) {
+    pthread_mutex_lock(&c->mutex_dat);
+    c->thr_dat_running = false;
+    pthread_mutex_unlock(&c->mutex_dat);
+
+    pthread_join(c->thr_dat, NULL);
+  }
 }

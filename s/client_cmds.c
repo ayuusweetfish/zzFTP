@@ -1,13 +1,17 @@
 #include "client.h"
 #include "auth.h"
 
+#include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 
 #define mark(_code, _str) send_mark(c->sock_ctl, _code, _str)
 #define markf(_code, ...) do { \
@@ -16,22 +20,33 @@
   mark(_code, s); \
 } while (0)
 
+#ifndef NO_AUTH
 #define auth() do { \
   if (c->state < CLST_READY) { \
     mark(530, "Log in first."); \
     return CMD_RESULT_DONE; \
   } \
 } while (0)
+#else
+#define auth() do { } while (0)
+#endif
 
 #define shutdown(_str) do { \
   mark(421, _str " Shutting down connection."); \
   return CMD_RESULT_SHUTDOWN; \
 } while (0)
 
+#define crit(_block) do { \
+  pthread_mutex_lock(&c->mutex_dat); \
+  _block \
+  pthread_mutex_unlock(&c->mutex_dat); \
+} while (0)
+
 // Reference: RFC 954, 5.4, Command-Reply Sequences (pp. 48-52)
 
 static cmd_result handler_QUIT(client *c, const char *arg)
 {
+  client_close_threads(c);
   return CMD_RESULT_SHUTDOWN;
 }
 
@@ -128,19 +143,61 @@ static cmd_result handler_PORT(client *c, const char *arg)
   return CMD_RESULT_DONE;
 }
 
+struct passive_data_arg {
+  int sock_fd;
+  client *c;
+};
+
+static void *passive_data(void *arg)
+{
+  int sock_fd = ((struct passive_data_arg *)arg)->sock_fd;
+  client *c = ((struct passive_data_arg *)arg)->c;
+  free(arg);
+
+  while (1) {
+    bool running;
+    crit({ running = c->thr_dat_running; });
+    if (!running) break;
+
+    int conn_fd = accept(sock_fd, NULL, NULL);
+    if (conn_fd == -1) {
+      if (errno == EAGAIN) {
+        usleep(1000000);
+        continue;
+      } else {
+        panic("accept() failed");
+      }
+    }
+
+    close(conn_fd);
+  }
+
+  info("data thread terminated");
+  close(sock_fd);
+  return NULL;
+}
+
 static cmd_result handler_PASV(client *c, const char *arg)
 {
   auth();
+  client_close_threads(c);
 
   uint8_t addr[6];
   int fd;
   if (ephemeral(c->sock_ctl, addr, &fd) != 0 ||
-      listen(fd, 8) != 0)
-    shutdown("Cannot enter passive mode.");
+      fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1 ||
+      listen(fd, 0) == -1)
+    shutdown("Cannot enter passive mode: cannot start data connection.");
 
   c->state = CLST_PASV;
-  if (c->sock_dat_p != -1) close(c->sock_dat_p);
-  c->sock_dat_p = fd;
+
+  // Create thread
+  struct passive_data_arg *thr_arg = malloc(sizeof(struct passive_data_arg));
+  thr_arg->sock_fd = fd;
+  thr_arg->c = c;
+  crit({ c->thr_dat_running = true; });
+  if (pthread_create(&c->thr_dat, NULL, &passive_data, thr_arg) != 0)
+    shutdown("Cannot enter passive mode: pthread_create() failed.");
 
   markf(227, "Entering Passive Mode ("
     "%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8

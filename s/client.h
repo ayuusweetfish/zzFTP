@@ -3,14 +3,13 @@
 
 #include "io_utils.h"
 
+#include <pthread.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct client_s {
   int sock_ctl;   // Socket for the control connection
   rlb buf_ctl;    // Buffer for the control connection
-
-  int sock_dat_p; // Socket for the data connection (passive)
-  int sock_dat;   // Socket for the data connection
 
   enum client_state_t {
     CLST_CONN = 0,    // Connected
@@ -29,12 +28,18 @@ typedef struct client_s {
   // Passive mode: local address and port
   uint8_t addr[4];
   uint16_t port;
+
+  pthread_mutex_t mutex_dat;
+  pthread_cond_t cond_dat;
+  pthread_t thr_dat;
+  bool thr_dat_running;
 } client;
 
 client *client_create(int sock_ctl);
 void client_close(client *c);
 
 void client_run_loop(client *c);
+void client_close_threads(client *c);
 
 typedef enum cmd_result_e {
   CMD_RESULT_DONE,
