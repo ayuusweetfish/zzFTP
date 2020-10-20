@@ -24,6 +24,7 @@ client *client_create(int sock_ctl)
   pthread_mutex_init(&c->mutex_dat, NULL);
   pthread_cond_init(&c->cond_dat, NULL);
   c->thr_dat_running = false;
+  c->dat_fp = NULL;
 
   return c;
 }
@@ -105,5 +106,6 @@ void client_close_threads(client *c)
     pthread_mutex_unlock(&c->mutex_dat);
 
     pthread_join(c->thr_dat, NULL);
+    c->state = CLST_READY;
   }
 }

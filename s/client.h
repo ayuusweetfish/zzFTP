@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 typedef struct client_s {
   int sock_ctl;   // Socket for the control connection
@@ -17,7 +18,6 @@ typedef struct client_s {
     CLST_READY,       // Ready
     CLST_PORT = 16,   // Port mode
     CLST_PASV = 32,   // Passive mode
-    CLST_XFER = 64,   // Transfer in progress
   } state;
 
   char *username;
@@ -33,6 +33,14 @@ typedef struct client_s {
   pthread_cond_t cond_dat;
   pthread_t thr_dat;
   bool thr_dat_running;
+
+  FILE *dat_fp;
+  enum dat_type_t {
+    DATA_UNDEFINED,
+    DATA_SEND_FILE,
+    DATA_RECV_FILE,
+    DATA_SEND_PIPE,
+  } dat_type;
 } client;
 
 client *client_create(int sock_ctl);

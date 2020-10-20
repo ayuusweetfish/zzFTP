@@ -154,26 +154,62 @@ static void *passive_data(void *arg)
   client *c = ((struct passive_data_arg *)arg)->c;
   free(arg);
 
+  int conn_fd = -1;
+  FILE *fp = NULL;
+  enum dat_type_t dat_type = DATA_UNDEFINED;
+
+  const int BUF_SIZE = 1024;
+  void *buf = malloc(BUF_SIZE);
+
   while (1) {
     bool running;
     crit({ running = c->thr_dat_running; });
     if (!running) break;
 
-    int conn_fd = accept(sock_fd, NULL, NULL);
     if (conn_fd == -1) {
-      if (errno == EAGAIN) {
-        usleep(1000000);
-        continue;
-      } else {
-        panic("accept() failed");
+      if ((conn_fd = accept(sock_fd, NULL, NULL)) == -1) {
+        if (errno == EAGAIN) {
+          usleep(1000000);
+          continue;
+        } else {
+          panic("accept() failed");
+        }
       }
     }
 
-    close(conn_fd);
+    if (conn_fd != -1) {
+      if (fp == NULL)
+        crit({ fp = c->dat_fp; dat_type = c->dat_type; });
+      if (fp != NULL) {
+        if (dat_type == DATA_SEND_FILE || dat_type == DATA_SEND_PIPE) {
+          size_t bytes_read = fread(buf, 1, BUF_SIZE, fp);
+          if (bytes_read > 0)
+            write_all(conn_fd, buf, bytes_read);
+        } else {
+          puts("TODO");
+        }
+        if (feof(fp)) {
+          break;  // Transmission complete
+        } else if (ferror(fp) != 0) {
+          warn("error reading file");
+          break;  // TODO: Inform the client about the error
+        }
+      }
+    }
   }
 
-  info("data thread terminated");
+  free(buf);
+  if (fp != NULL) {
+    if (dat_type == DATA_SEND_PIPE) pclose(fp);
+    else fclose(fp);
+  }
+  if (conn_fd != -1) close(conn_fd);
   close(sock_fd);
+
+  crit({ c->dat_fp = NULL; });
+  c->state = CLST_READY;
+
+  info("data thread terminated");
   return NULL;
 }
 
@@ -205,6 +241,33 @@ static cmd_result handler_PASV(client *c, const char *arg)
   return CMD_RESULT_DONE;
 }
 
+static cmd_result handler_LIST(client *c, const char *arg)
+{
+  auth();
+  if (c->state != CLST_PORT && c->state != CLST_PASV) {
+    mark(425, "Use PORT or PASV first.");
+    return CMD_RESULT_DONE;
+  }
+
+  FILE *f;
+  crit({ f = c->dat_fp; });
+  if (f != NULL) {
+    mark(425, "Data transfer already in progress. Ignoring.");
+    return CMD_RESULT_DONE;
+  }
+
+  f = popen("ls /tmp", "r");
+  if (f == NULL) {
+    mark(550, "Internal error. Cannot list.");
+    return CMD_RESULT_DONE;
+  }
+
+  crit({ c->dat_fp = f; c->dat_type = DATA_SEND_PIPE; });
+
+  mark(150, "Directory listing is being sent over the data connection.");
+  return CMD_RESULT_DONE;
+}
+
 // Process
 
 cmd_result process_command(client *c, const char *verb, const char *arg)
@@ -219,6 +282,7 @@ cmd_result process_command(client *c, const char *verb, const char *arg)
   def_cmd(PASS)
   def_cmd(PORT)
   def_cmd(PASV)
+  def_cmd(LIST)
 
 #undef def_cmd
 
