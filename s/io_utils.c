@@ -148,23 +148,28 @@ void send_mark(int fd, int code, const char *msg)
   }
 }
 
-int ephemeral(uint8_t o_addr[6], int *o_sock_fd)
+int ephemeral(int sock_conn, uint8_t o_addr[6], int *o_sock_fd)
 {
-  int sock_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (sock_fd == -1) return -1;
+  int sock_eph = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (sock_eph == -1) return -1;
 
   struct sockaddr_in addr = { 0 };
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = INADDR_ANY;
-  if (bind(sock_fd, (struct sockaddr *)&addr, sizeof addr) == -1)
+  if (bind(sock_eph, (struct sockaddr *)&addr, sizeof addr) == -1)
     return -2;
 
-  socklen_t addr_len = sizeof addr;
-  getsockname(sock_fd, (struct sockaddr *)&addr, &addr_len);
-  memcpy(o_addr + 0, &addr.sin_addr.s_addr, 4);
+  socklen_t addr_len;
+
+  // Port
+  addr_len = sizeof addr;
+  getsockname(sock_eph, (struct sockaddr *)&addr, &addr_len);
   memcpy(o_addr + 4, &addr.sin_port, 2);
 
-  printf("~ %s:%d\n", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+  // Address
+  addr_len = sizeof addr;
+  getsockname(sock_conn, (struct sockaddr *)&addr, &addr_len);
+  memcpy(o_addr + 0, &addr.sin_addr.s_addr, 4);
 
   return 0;
 }

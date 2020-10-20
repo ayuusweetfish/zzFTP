@@ -117,7 +117,7 @@ static void handler_PASV(client *c, const char *arg)
 
   uint8_t addr[6];
   int fd;
-  ephemeral(addr, &fd);
+  ephemeral(c->sock_ctl, addr, &fd);
 
   markf(227, "Entering Passive Mode ("
     "%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8
