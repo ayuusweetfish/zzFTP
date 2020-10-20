@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <arpa/inet.h>
@@ -22,9 +23,35 @@ void *serve_client(void *arg)
   return NULL;
 }
 
+void print_usage(char *argv0, int exit_code)
+{
+  printf("usage: %s [-port <n>] [-root <path>]\n", argv0);
+  exit(exit_code);
+}
+
 int main(int argc, char *argv[])
 {
-  chdir("/tmp");
+  // Parse arguments
+  int port = 21;
+  const char *root = "/tmp";
+
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "-help") == 0) {
+      print_usage(argv[0], 0);
+    } else if (strcmp(argv[i], "-port") == 0) {
+      if (i + 1 >= argc) print_usage(argv[0], 1);
+      if (sscanf(argv[i + 1], "%d", &port) != 1 ||
+          port < 0 || port >= 65535)
+        print_usage(argv[0], 1);
+    } else if (strcmp(argv[i], "-root") == 0) {
+      if (i + 1 >= argc) print_usage(argv[0], 1);
+      root = argv[i + 1];
+    }
+  }
+
+  if (chdir(root) != 0)
+    panic("chdir() failed");
+
   signal(SIGPIPE, SIG_IGN);
 
   // Allocate socket
@@ -40,7 +67,7 @@ int main(int argc, char *argv[])
   // Bind to address and start listening
   struct sockaddr_in addr = { 0 };
   addr.sin_family = AF_INET;
-  addr.sin_port = htons(1800);
+  addr.sin_port = htons(port);
   addr.sin_addr.s_addr = INADDR_ANY;
   if (bind(sock_fd, (struct sockaddr *)&addr, sizeof addr) == -1)
     panic("bind() failed");

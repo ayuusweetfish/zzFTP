@@ -14,7 +14,8 @@ static inline void double_and_limit(int *x, int limit)
 
 static inline bool process_block(
   client *c,
-  int conn_fd, enum dat_type_t dat_type, FILE *fp, void *buf)
+  int conn_fd, enum dat_type_t dat_type, FILE *fp, void *buf,
+  int *process_sleep)
 {
   bool xfer_complete;
   if (dat_type == DATA_SEND_FILE || dat_type == DATA_SEND_PIPE) {
@@ -28,11 +29,13 @@ static inline bool process_block(
     xfer_complete = feof(fp);
   } else /* if (dat_type == DATA_RECV_FILE) */ {
     ssize_t bytes_read = read(conn_fd, buf, BUF_SIZE);
-    if (bytes_read > 0)
+    if (bytes_read > 0) {
+      *process_sleep = 1000;
       fwrite(buf, 1, bytes_read, fp);
-    else if (bytes_read == -1) {
+    } else if (bytes_read == -1) {
       if (errno == EAGAIN) {
-        usleep(1000000);
+        usleep(*process_sleep);
+        double_and_limit(process_sleep, 200000);
       } else {
         warn("read() failed");
         bytes_read = 0;   // Treat transfer as complete
@@ -104,12 +107,15 @@ static void *active_data(void *arg)
   }
   fcntl(conn_fd, F_SETFL, fcntl(conn_fd, F_GETFL, 0) | O_NONBLOCK);
 
+  int process_sleep = 1000;
+
   while (1) {
     bool running;
     crit({ running = c->thr_dat_running; });
     if (!running) break;
 
-    if (!process_block(c, conn_fd, dat_type, fp, buf)) break;
+    if (!process_block(c, conn_fd, dat_type, fp, buf, &process_sleep))
+      break;
   }
 
 _cleanup:
@@ -136,6 +142,7 @@ static void *passive_data(void *arg)
   void *buf = malloc(BUF_SIZE);
 
   int accept_sleep = 1000;
+  int process_sleep = 1000;
 
   while (1) {
     bool running;
@@ -146,7 +153,7 @@ static void *passive_data(void *arg)
       if ((conn_fd = accept(sock_fd, NULL, NULL)) == -1) {
         if (errno == EAGAIN) {
           usleep(accept_sleep);
-          double_and_limit(&accept_sleep, 1000000);
+          double_and_limit(&accept_sleep, 200000);
           continue;
         } else {
           panic("accept() failed");
@@ -158,7 +165,8 @@ static void *passive_data(void *arg)
       if (fp == NULL)
         crit({ fp = c->dat_fp; dat_type = c->dat_type; });
       if (fp != NULL) {
-        if (!process_block(c, conn_fd, dat_type, fp, buf)) break;
+        if (!process_block(c, conn_fd, dat_type, fp, buf, &process_sleep))
+          break;
       } else {
         // Connected and no file present. Detect disconnection.
         struct pollfd poll_fd;
