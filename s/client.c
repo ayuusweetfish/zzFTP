@@ -22,6 +22,7 @@ client *client_create(int sock_ctl)
   c->xferred_files_num = 0;
 
   c->wd = strdup("/");
+  c->rnfr = NULL;
 
   pthread_mutex_init(&c->mutex_dat, NULL);
   pthread_cond_init(&c->cond_dat, NULL);
@@ -41,6 +42,7 @@ void client_close(client *c)
 
   if (c->username != NULL) free(c->username);
   free(c->wd);
+  if (c->rnfr != NULL) free(c->rnfr);
 
   pthread_mutex_destroy(&c->mutex_dat);
 

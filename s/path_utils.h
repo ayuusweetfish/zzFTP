@@ -12,9 +12,14 @@ char *path_cat(const char *wd, const char *rel);
 // Otherwise false is returned and the original string is not touched
 bool path_change(char **wd, const char *rel);
 
-// Checks whether the path exists as a directory
+// Checks whether the path exists (and possibly as a directory/regular file)
 // The path starts with a slash and is treated as a relative path
 // from the FTP root directory
-bool dir_exists(const char *path);
+enum path_requirement {
+  PATH_REQUIREMENT_NONE,
+  PATH_REQUIREMENT_DIR,
+  PATH_REQUIREMENT_REGULAR,
+};
+bool path_exists(const char *path, enum path_requirement r);
 
 #endif

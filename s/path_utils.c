@@ -56,13 +56,19 @@ bool path_change(char **wd, const char *rel)
   }
 }
 
-bool dir_exists(const char *path)
+bool path_exists(const char *path, enum path_requirement r)
 {
   path++; // Skip the leading slash
   if (*path == '\0') return true;
 
   struct stat s;
-  return !(lstat(path, &s) != 0 || !S_ISDIR(s.st_mode));
+  if (lstat(path, &s) != 0) return false;
+  switch (r) {
+    case PATH_REQUIREMENT_NONE: return true;
+    case PATH_REQUIREMENT_DIR: return S_ISDIR(s.st_mode);
+    case PATH_REQUIREMENT_REGULAR: return S_ISREG(s.st_mode);
+    default: return false;
+  }
 }
 
 #ifdef PATH_UTILS_TEST

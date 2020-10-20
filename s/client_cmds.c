@@ -12,6 +12,7 @@
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 
 #ifndef NO_AUTH
@@ -174,20 +175,23 @@ static cmd_result handler_PASV(client *c, const char *arg)
   return CMD_RESULT_DONE;
 }
 
+#define full_path(_d) do { \
+  _d = path_cat(c->wd, arg); \
+  if (_d == NULL) { \
+    mark(501, "Argument is not a valid path."); \
+    return CMD_RESULT_DONE; \
+  } \
+} while (0)
+
 static cmd_result handler_CWD(client *c, const char *arg)
 {
   ignore_if_xfer();
   auth();
 
-  char *d = path_cat(c->wd, arg);
-  if (d == NULL) {
-    mark(501, "Invalid path.");
-    return CMD_RESULT_DONE;
-  }
-  if (!dir_exists(d)) {
+  char *d; full_path(d);
+  if (!path_exists(d, PATH_REQUIREMENT_DIR)) {
     markf(550, "Path <%s> does not exist.", d);
-    free(d);
-    return CMD_RESULT_DONE;
+    return (free(d), CMD_RESULT_DONE);
   }
 
   free(c->wd);
@@ -202,6 +206,102 @@ static cmd_result handler_PWD(client *c, const char *arg)
   auth();
   markf(257, "Working directory is <%s>.", c->wd);
   return CMD_RESULT_DONE;
+}
+
+static cmd_result handler_MKD(client *c, const char *arg)
+{
+  ignore_if_xfer();
+  auth();
+
+  char *d; full_path(d);
+  if (mkdir(d + 1, 0755) != 0) {
+    markf(550, "Cannot create directory <%s> (%s).", d, strerror(errno));
+    return (free(d), CMD_RESULT_DONE);
+  }
+
+  markf(250, "Directory <%s> created.", d);
+  return (free(d), CMD_RESULT_DONE);
+}
+
+#define mark_dir(_msg, _cmp, ...) do { \
+  bool changes_wd = (strcmp(c->wd, _cmp) == 0); \
+  if (changes_wd) { \
+    char *d_up = path_cat(d, ".."); \
+    free(c->wd); \
+    c->wd = d_up; \
+    markf(250, _msg " Working directory changed to <%s>.", \
+      __VA_ARGS__, c->wd); \
+  } else { \
+    markf(250, _msg, __VA_ARGS__); \
+  } \
+} while (0)
+
+static cmd_result handler_RMD(client *c, const char *arg)
+{
+  ignore_if_xfer();
+  auth();
+
+  char *d; full_path(d);
+  if (strlen(d) == 1) {
+    mark(550, "Cannot remove root directory.");
+    return (free(d), CMD_RESULT_DONE);
+  }
+  if (rmdir(d + 1) != 0) {
+    markf(550, "Cannot remove directory <%s> (%s).", d, strerror(errno));
+    return (free(d), CMD_RESULT_DONE);
+  }
+
+  mark_dir("Directory <%s> removed.", d, d);
+  return (free(d), CMD_RESULT_DONE);
+}
+
+static cmd_result handler_RNFR(client *c, const char *arg)
+{
+  ignore_if_xfer();
+  auth();
+
+  char *d; full_path(d);
+  if (strlen(d) == 1) {
+    mark(550, "Cannot rename root directory.");
+    return (free(d), CMD_RESULT_DONE);
+  }
+  if (!path_exists(d, PATH_REQUIREMENT_NONE)) {
+    markf(550, "Path <%s> does not exist.", d);
+    return (free(d), CMD_RESULT_DONE);
+  }
+
+  if (c->rnfr != NULL) free(c->rnfr);
+  c->rnfr = d;
+  markf(250, "Renaming <%s>.", d);
+  return CMD_RESULT_DONE;
+}
+
+static cmd_result handler_RNTO(client *c, const char *arg)
+{
+  ignore_if_xfer();
+  auth();
+
+  if (c->rnfr == NULL) {
+    mark(503, "Use RNFR first.");
+    return CMD_RESULT_DONE;
+  }
+
+  char *rnfr = c->rnfr;
+  c->rnfr = NULL;
+
+  char *d; full_path(d);
+  if (strlen(d) == 1) {
+    mark(550, "Cannot rename to root directory.");
+    return (free(rnfr), free(d), CMD_RESULT_DONE);
+  }
+  if (rename(rnfr + 1, d + 1) != 0) {
+    markf(550, "Cannot rename <%s> to <%s> (%s).",
+      rnfr, d, strerror(errno));
+    return (free(rnfr), free(d), CMD_RESULT_DONE);
+  }
+
+  mark_dir("Renamed <%s> to <%s>.", rnfr, rnfr, d);
+  return (free(rnfr), free(d), CMD_RESULT_DONE);
 }
 
 static cmd_result handler_LIST(client *c, const char *arg)
@@ -252,6 +352,10 @@ cmd_result process_command(client *c, const char *verb, const char *arg)
   def_cmd(PASV)
   def_cmd(CWD)
   def_cmd(PWD)
+  def_cmd(MKD)
+  def_cmd(RMD)
+  def_cmd(RNFR)
+  def_cmd(RNTO)
   def_cmd(LIST)
   def_cmd(ABOR)
 
