@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/stat.h>
+
 char *path_cat(const char *wd, const char *rel)
 {
   if (wd[0] != '/') return NULL;
@@ -10,7 +12,7 @@ char *path_cat(const char *wd, const char *rel)
   if (buf == NULL) return NULL;
 #define meh (free(buf), NULL)
 
-  strcpy(buf, rel[0] == '/' ? "/" : wd);
+  strcpy(buf, (rel[0] == '/' || rel[0] == '\0') ? "/" : wd);
   size_t len = strlen(buf);
 
   for (const char *c = rel, *d = c; *d != '\0'; c = d + 1) {
@@ -42,7 +44,7 @@ char *path_cat(const char *wd, const char *rel)
 #undef meh
 }
 
-bool path_cd(char **wd, const char *rel)
+bool path_change(char **wd, const char *rel)
 {
   char *p = path_cat(*wd, rel);
   if (p != NULL) {
@@ -52,6 +54,15 @@ bool path_cd(char **wd, const char *rel)
   } else {
     return false;
   }
+}
+
+bool dir_exists(const char *path)
+{
+  path++; // Skip the leading slash
+  if (*path == '\0') return true;
+
+  struct stat s;
+  return !(lstat(path, &s) != 0 || !S_ISDIR(s.st_mode));
 }
 
 #ifdef PATH_UTILS_TEST
@@ -71,6 +82,7 @@ int main()
   test("/quq/qvq/qwq/qxq", "qaq/qnq", "/quq/qvq/qwq/qxq/qaq/qnq");
   test("/quq/qvq", "qwq/../../qxq/", "/quq/qxq");
   test("/quq/qvq", "../../../../../..", "/");
+  test("/quq/qvq/qwq/qxq", "", "/");
   test("/", "quq", "/quq");
   test("/quq", "qvq", "/quq/qvq");
   test("/", "a//b", "/a/b");

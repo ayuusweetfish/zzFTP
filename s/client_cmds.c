@@ -1,5 +1,6 @@
 #include "client.h"
 #include "auth.h"
+#include "path_utils.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -173,6 +174,36 @@ static cmd_result handler_PASV(client *c, const char *arg)
   return CMD_RESULT_DONE;
 }
 
+static cmd_result handler_CWD(client *c, const char *arg)
+{
+  ignore_if_xfer();
+  auth();
+
+  char *d = path_cat(c->wd, arg);
+  if (d == NULL) {
+    mark(501, "Invalid path.");
+    return CMD_RESULT_DONE;
+  }
+  if (!dir_exists(d)) {
+    markf(550, "Path <%s> does not exist.", d);
+    free(d);
+    return CMD_RESULT_DONE;
+  }
+
+  free(c->wd);
+  c->wd = d;
+  markf(250, "Working directory changed to <%s>.", d);
+  return CMD_RESULT_DONE;
+}
+
+static cmd_result handler_PWD(client *c, const char *arg)
+{
+  ignore_if_xfer();
+  auth();
+  markf(257, "Working directory is <%s>.", c->wd);
+  return CMD_RESULT_DONE;
+}
+
 static cmd_result handler_LIST(client *c, const char *arg)
 {
   ignore_if_xfer();
@@ -219,6 +250,8 @@ cmd_result process_command(client *c, const char *verb, const char *arg)
   def_cmd(PASS)
   def_cmd(PORT)
   def_cmd(PASV)
+  def_cmd(CWD)
+  def_cmd(PWD)
   def_cmd(LIST)
   def_cmd(ABOR)
 
