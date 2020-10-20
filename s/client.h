@@ -47,6 +47,8 @@ client *client_create(int sock_ctl);
 void client_close(client *c);
 
 void client_run_loop(client *c);
+
+bool client_xfer_in_progress(client *c);
 void client_close_threads(client *c);
 
 typedef enum cmd_result_e {
@@ -55,5 +57,18 @@ typedef enum cmd_result_e {
 } cmd_result;
 
 cmd_result process_command(client *c, const char *verb, const char *arg);
+
+#define mark(_code, _str) send_mark(c->sock_ctl, _code, _str)
+#define markf(_code, ...) do { \
+  char s[256]; \
+  snprintf(s, sizeof s, __VA_ARGS__); \
+  mark(_code, s); \
+} while (0)
+
+#define crit(_block) do { \
+  pthread_mutex_lock(&c->mutex_dat); \
+  _block \
+  pthread_mutex_unlock(&c->mutex_dat); \
+} while (0)
 
 #endif

@@ -13,13 +13,6 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#define mark(_code, _str) send_mark(c->sock_ctl, _code, _str)
-#define markf(_code, ...) do { \
-  char s[256]; \
-  snprintf(s, sizeof s, __VA_ARGS__); \
-  mark(_code, s); \
-} while (0)
-
 #ifndef NO_AUTH
 #define auth() do { \
   if (c->state < CLST_READY) { \
@@ -31,16 +24,13 @@
 #define auth() do { } while (0)
 #endif
 
-#define shutdown(_str) do { \
+#define disconnect(_str) do { \
   mark(421, _str " Shutting down connection."); \
   return CMD_RESULT_SHUTDOWN; \
 } while (0)
 
-#define crit(_block) do { \
-  pthread_mutex_lock(&c->mutex_dat); \
-  _block \
-  pthread_mutex_unlock(&c->mutex_dat); \
-} while (0)
+#define ignore_if_xfer() \
+  if (client_xfer_in_progress(c)) return CMD_RESULT_DONE
 
 // Reference: RFC 954, 5.4, Command-Reply Sequences (pp. 48-52)
 
@@ -58,6 +48,7 @@ static cmd_result handler_SYST(client *c, const char *arg)
 
 static cmd_result handler_TYPE(client *c, const char *arg)
 {
+  ignore_if_xfer();
   if (strcmp(arg, "I") == 0) mark(200, "Type set to I.");
   else mark(504, "Only binary mode is supported.");
   return CMD_RESULT_DONE;
@@ -65,6 +56,7 @@ static cmd_result handler_TYPE(client *c, const char *arg)
 
 static cmd_result handler_USER(client *c, const char *arg)
 {
+  ignore_if_xfer();
   if (c->state >= CLST_READY) {
     mark(503, "Already logged in.");
     return CMD_RESULT_DONE;
@@ -86,6 +78,7 @@ static cmd_result handler_USER(client *c, const char *arg)
 
 static cmd_result handler_PASS(client *c, const char *arg)
 {
+  ignore_if_xfer();
   if (c->state < CLST_WAIT_PASS) {
     mark(503, "Specify your username first.");
     return CMD_RESULT_DONE;
@@ -122,6 +115,7 @@ static cmd_result handler_PASS(client *c, const char *arg)
 
 static cmd_result handler_PORT(client *c, const char *arg)
 {
+  ignore_if_xfer();
   auth();
 
   unsigned x[6];
@@ -158,7 +152,11 @@ static void *passive_data(void *arg)
   FILE *fp = NULL;
   enum dat_type_t dat_type = DATA_UNDEFINED;
 
-  const int BUF_SIZE = 1024;
+#ifndef SLOW_DATA
+  #define BUF_SIZE 1024
+#else
+  #define BUF_SIZE 8
+#endif
   void *buf = malloc(BUF_SIZE);
 
   while (1) {
@@ -183,16 +181,21 @@ static void *passive_data(void *arg)
       if (fp != NULL) {
         if (dat_type == DATA_SEND_FILE || dat_type == DATA_SEND_PIPE) {
           size_t bytes_read = fread(buf, 1, BUF_SIZE, fp);
-          if (bytes_read > 0)
+          if (bytes_read > 0) {
             write_all(conn_fd, buf, bytes_read);
+          #ifdef SLOW_DATA
+            usleep(300000);
+          #endif
+          }
         } else {
           puts("TODO");
         }
         if (feof(fp)) {
-          break;  // Transmission complete
+          mark(226, "Transfer complete.");
+          break;
         } else if (ferror(fp) != 0) {
-          warn("error reading file");
-          break;  // TODO: Inform the client about the error
+          mark(451, "Transfer aborted by internal I/O error.");
+          break;
         }
       }
     }
@@ -211,10 +214,12 @@ static void *passive_data(void *arg)
 
   info("data thread terminated");
   return NULL;
+#undef BUF_SIZE
 }
 
 static cmd_result handler_PASV(client *c, const char *arg)
 {
+  ignore_if_xfer();
   auth();
   client_close_threads(c);
 
@@ -223,7 +228,7 @@ static cmd_result handler_PASV(client *c, const char *arg)
   if (ephemeral(c->sock_ctl, addr, &fd) != 0 ||
       fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1 ||
       listen(fd, 0) == -1)
-    shutdown("Cannot enter passive mode: cannot start data connection.");
+    disconnect("Cannot enter passive mode: cannot start data connection.");
 
   c->state = CLST_PASV;
 
@@ -233,7 +238,7 @@ static cmd_result handler_PASV(client *c, const char *arg)
   thr_arg->c = c;
   crit({ c->thr_dat_running = true; });
   if (pthread_create(&c->thr_dat, NULL, &passive_data, thr_arg) != 0)
-    shutdown("Cannot enter passive mode: pthread_create() failed.");
+    disconnect("Cannot enter passive mode: pthread_create() failed.");
 
   markf(227, "Entering Passive Mode ("
     "%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8
@@ -243,20 +248,14 @@ static cmd_result handler_PASV(client *c, const char *arg)
 
 static cmd_result handler_LIST(client *c, const char *arg)
 {
+  ignore_if_xfer();
   auth();
   if (c->state != CLST_PORT && c->state != CLST_PASV) {
     mark(425, "Use PORT or PASV first.");
     return CMD_RESULT_DONE;
   }
 
-  FILE *f;
-  crit({ f = c->dat_fp; });
-  if (f != NULL) {
-    mark(425, "Data transfer already in progress. Ignoring.");
-    return CMD_RESULT_DONE;
-  }
-
-  f = popen("ls /tmp", "r");
+  FILE *f = popen("ls /tmp", "r");
   if (f == NULL) {
     mark(550, "Internal error. Cannot list.");
     return CMD_RESULT_DONE;
@@ -265,6 +264,17 @@ static cmd_result handler_LIST(client *c, const char *arg)
   crit({ c->dat_fp = f; c->dat_type = DATA_SEND_PIPE; });
 
   mark(150, "Directory listing is being sent over the data connection.");
+  return CMD_RESULT_DONE;
+}
+
+static cmd_result handler_ABOR(client *c, const char *arg)
+{
+  if (client_xfer_in_progress(c)) {
+    crit({ c->thr_dat_running = false; });
+    mark(226, "Transfer aborted.");
+  } else {
+    mark(225, "No transfer in progress.");
+  }
   return CMD_RESULT_DONE;
 }
 
@@ -283,6 +293,7 @@ cmd_result process_command(client *c, const char *verb, const char *arg)
   def_cmd(PORT)
   def_cmd(PASV)
   def_cmd(LIST)
+  def_cmd(ABOR)
 
 #undef def_cmd
 

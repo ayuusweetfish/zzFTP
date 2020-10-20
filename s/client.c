@@ -94,17 +94,21 @@ void client_run_loop(client *c)
   send_mark(c->sock_ctl, 221, GOODBYE_MSG);
 }
 
+bool client_xfer_in_progress(client *c)
+{
+  FILE *f;
+  crit({ f = c->dat_fp; });
+  if (f != NULL) return true;
+  return false;
+}
+
 void client_close_threads(client *c)
 {
-  pthread_mutex_lock(&c->mutex_dat);
-  bool running = c->thr_dat_running;
-  pthread_mutex_unlock(&c->mutex_dat);
+  bool running;
+  crit({ running = c->thr_dat_running; });
 
   if (running) {
-    pthread_mutex_lock(&c->mutex_dat);
-    c->thr_dat_running = false;
-    pthread_mutex_unlock(&c->mutex_dat);
-
+    crit({ c->thr_dat_running = false; });
     pthread_join(c->thr_dat, NULL);
     c->state = CLST_READY;
   }
