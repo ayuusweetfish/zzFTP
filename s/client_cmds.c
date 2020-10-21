@@ -2,6 +2,7 @@
 #include "auth.h"
 #include "path_utils.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -61,8 +62,10 @@ static cmd_result handler_SYST(client *c, const char *arg)
 static cmd_result handler_TYPE(client *c, const char *arg)
 {
   ignore_if_xfer();
-  if (strcmp(arg, "I") == 0) mark(200, "Type set to I.");
-  else mark(504, "Only binary mode is supported.");
+  if (toupper(arg[0]) == 'I') mark(200, "Type set to I.");
+  else if (toupper(arg[0]) == 'A')
+    mark(200, "Type set to A.\nNote: no conversion is applied.");
+  else mark(504, "Only ASCII mode (A) and image mode (I) are supported.");
   return CMD_RESULT_DONE;
 }
 
@@ -200,13 +203,13 @@ static cmd_result handler_CWD(client *c, const char *arg)
 
   char *d; full_path(d);
   if (!path_exists(d, PATH_REQUIREMENT_DIR)) {
-    markf(550, "Directory <%s> does not exist.", d);
+    markf(550, "Directory \"%s\" does not exist.", d);
     return (free(d), CMD_RESULT_DONE);
   }
 
   free(c->wd);
   c->wd = d;
-  markf(250, "Working directory changed to <%s>.", d);
+  markf(250, "Working directory changed to \"%s\".", d);
   return CMD_RESULT_DONE;
 }
 
@@ -214,7 +217,7 @@ static cmd_result handler_PWD(client *c, const char *arg)
 {
   ignore_if_xfer();
   auth();
-  markf(257, "Working directory is <%s>.", c->wd);
+  markf(257, "Working directory is \"%s\".", c->wd);
   return CMD_RESULT_DONE;
 }
 
@@ -225,11 +228,11 @@ static cmd_result handler_MKD(client *c, const char *arg)
 
   char *d; full_path(d);
   if (mkdir(d + 1, 0755) != 0) {
-    markf(550, "Cannot create directory <%s> (%s).", d, strerror(errno));
+    markf(550, "Cannot create directory \"%s\" (%s).", d, strerror(errno));
     return (free(d), CMD_RESULT_DONE);
   }
 
-  markf(250, "Directory <%s> created.", d);
+  markf(250, "Directory \"%s\" created.", d);
   return (free(d), CMD_RESULT_DONE);
 }
 
@@ -239,7 +242,7 @@ static cmd_result handler_MKD(client *c, const char *arg)
     char *d_up = path_cat(d, ".."); \
     free(c->wd); \
     c->wd = d_up; \
-    markf(250, _msg " Working directory changed to <%s>.", \
+    markf(250, _msg " Working directory changed to \"%s\".", \
       __VA_ARGS__, c->wd); \
   } else { \
     markf(250, _msg, __VA_ARGS__); \
@@ -257,11 +260,11 @@ static cmd_result handler_RMD(client *c, const char *arg)
     return (free(d), CMD_RESULT_DONE);
   }
   if (rmdir(d + 1) != 0) {
-    markf(550, "Cannot remove directory <%s> (%s).", d, strerror(errno));
+    markf(550, "Cannot remove directory \"%s\" (%s).", d, strerror(errno));
     return (free(d), CMD_RESULT_DONE);
   }
 
-  mark_dir("Directory <%s> removed.", d, d);
+  mark_dir("Directory \"%s\" removed.", d, d);
   return (free(d), CMD_RESULT_DONE);
 }
 
@@ -276,13 +279,13 @@ static cmd_result handler_RNFR(client *c, const char *arg)
     return (free(d), CMD_RESULT_DONE);
   }
   if (!path_exists(d, PATH_REQUIREMENT_NONE)) {
-    markf(550, "Path <%s> does not exist.", d);
+    markf(550, "Path \"%s\" does not exist.", d);
     return (free(d), CMD_RESULT_DONE);
   }
 
   if (c->rnfr != NULL) free(c->rnfr);
   c->rnfr = d;
-  markf(250, "Renaming <%s>.", d);
+  markf(250, "Renaming \"%s\".", d);
   return CMD_RESULT_DONE;
 }
 
@@ -305,13 +308,37 @@ static cmd_result handler_RNTO(client *c, const char *arg)
     return (free(rnfr), free(d), CMD_RESULT_DONE);
   }
   if (rename(rnfr + 1, d + 1) != 0) {
-    markf(550, "Cannot rename <%s> to <%s> (%s).",
+    markf(550, "Cannot rename \"%s\" to \"%s\" (%s).",
       rnfr, d, strerror(errno));
     return (free(rnfr), free(d), CMD_RESULT_DONE);
   }
 
-  mark_dir("Renamed <%s> to <%s>.", rnfr, rnfr, d);
+  mark_dir("Renamed \"%s\" to \"%s\".", rnfr, rnfr, d);
   return (free(rnfr), free(d), CMD_RESULT_DONE);
+}
+
+static cmd_result handler_DELE(client *c, const char *arg)
+{
+  ignore_if_xfer();
+  auth();
+
+  char *d; full_path(d);
+  if (strlen(d) == 1) {
+    mark(550, "Cannot rename root directory.");
+    return (free(d), CMD_RESULT_DONE);
+  }
+  if (!path_exists(d, PATH_REQUIREMENT_REGULAR)) {
+    markf(550, "File \"%s\" does not exist.", d);
+    return (free(d), CMD_RESULT_DONE);
+  }
+
+  if (unlink(d + 1) != 0) {
+    markf(550, "Cannot delete \"%s\" (%s).", d, strerror(errno));
+    return (free(d), CMD_RESULT_DONE);
+  }
+
+  markf(250, "Deleted \"%s\".", d);
+  return (free(d), CMD_RESULT_DONE);
 }
 
 static cmd_result handler_LIST(client *c, const char *arg)
@@ -320,16 +347,20 @@ static cmd_result handler_LIST(client *c, const char *arg)
   auth();
   data();
 
-  FILE *f = popen("ls -lH", "r");
+  char *cmd = malloc(10 + strlen(c->wd));
+  strcpy(cmd, "ls -lH ");
+  strcat(cmd, c->wd + 1);
+
+  FILE *f = popen(cmd, "r");
   if (f == NULL) {
     mark(550, "Internal error. Cannot list.");
-    return CMD_RESULT_DONE;
+    return (free(cmd), CMD_RESULT_DONE);
   }
 
   signal_file(DATA_SEND_PIPE);
 
   mark(150, "Directory listing is being sent over the data connection.");
-  return CMD_RESULT_DONE;
+  return (free(cmd), CMD_RESULT_DONE);
 }
 
 static cmd_result handler_RETR(client *c, const char *arg)
@@ -340,7 +371,7 @@ static cmd_result handler_RETR(client *c, const char *arg)
 
   char *d; full_path(d);
   if (!path_exists(d, PATH_REQUIREMENT_REGULAR)) {
-    markf(550, "File <%s> does not exist.", d);
+    markf(550, "File \"%s\" does not exist.", d);
     return (free(d), CMD_RESULT_DONE);
   }
 
@@ -410,6 +441,7 @@ cmd_result process_command(client *c, const char *verb, const char *arg)
   def_cmd(RMD)
   def_cmd(RNFR)
   def_cmd(RNTO)
+  def_cmd(DELE)
   def_cmd(LIST)
   def_cmd(RETR)
   def_cmd(STOR)

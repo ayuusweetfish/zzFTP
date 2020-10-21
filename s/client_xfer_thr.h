@@ -6,6 +6,8 @@
 
 #include <poll.h>
 
+#include <sys/socket.h>
+
 static inline void double_and_limit(int *x, int limit)
 {
   int new_x = (*x) * 2;
@@ -169,12 +171,17 @@ static void *passive_data(void *arg)
           break;
       } else {
         // Connected and no file present. Detect disconnection.
+        // Ref: http://stefan.buettcher.org/cs/conn_closed.html
         struct pollfd poll_fd;
+        char c;
         poll_fd.fd = conn_fd;
         poll_fd.events = POLLIN | POLLHUP;
         poll_fd.revents = 0;
-        if (poll(&poll_fd, 1, 100) > 0 && (poll_fd.revents & POLLHUP))
+        if (poll(&poll_fd, 1, 100) > 0 && (poll_fd.revents & POLLHUP)
+            && recv(conn_fd, &c, 1, MSG_PEEK | MSG_DONTWAIT) == 0) {
+          close(conn_fd);
           conn_fd = -1;
+        }
       }
     }
   }
