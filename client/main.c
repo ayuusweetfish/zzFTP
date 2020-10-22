@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static int onShouldQuit(void *_unused)
 {
@@ -47,35 +48,76 @@ static inline void status(const char *s)
 } while (0)
 
 // LIST command
-static void auth_read(int code, char *s);
+static void auth_1(int code, char *s);
+static void auth_2(int code, char *s);
+static void auth_3(int code, char *s);
 void do_auth()
 {
-  xfer_write(&x, "USER qwq\r\n", NULL);
-  xfer_read_mark(&x, auth_read);
+  status("Connected, waiting for welcome message");
+  xfer_read_mark(&x, auth_1);
 }
-static void auth_read(int code, char *s)
+static void auth_1(int code, char *s)
 {
-  // printf("%d [%s]\n", code, s);
   if (code == 220) {
-    puts("Logged in");
+    status("Welcome message received, logging in");
+    char *user = uiEntryText(entUser);
+    char *s;
+    asprintf(&s, "USER %s\r\n", user);
+    xfer_write(&x, s, NULL);
+    free(s);
+    free(user);
+    xfer_read_mark(&x, auth_2);
+  } else {
+    done();
+    status("Did not see a valid welcome mark");
+    uiControlEnable(uiControl(boxConn));
+    uiControlEnable(uiControl(btnConn));
   }
+}
+static void auth_2(int code, char *s)
+{
+  if (code == 331) {
+    char *pass = uiEntryText(entPass);
+    asprintf(&s, "PASS %s\r\n", pass);
+    xfer_write(&x, s, NULL);
+    free(s);
+    free(pass);
+    xfer_read_mark(&x, auth_3);
+  } else {
+    done();
+    status("Did not see a valid password request mark");
+    uiControlEnable(uiControl(boxConn));
+    uiControlEnable(uiControl(btnConn));
+  }
+}
+static void auth_3(int code, char *s)
+{
+  if (code == 230) {
+    status("Logged in");
+    connected = true;
+    uiButtonSetText(btnConn, "Disconnect");
+    uiControlEnable(uiControl(boxOp));
+  } else {
+    status(code == 530 ?
+      "Incorrect credentials" :
+      "Did not see a valid log in mark");
+    uiControlEnable(uiControl(boxConn));
+  }
+  done();
+  uiControlEnable(uiControl(btnConn));
 }
 
 void xfer_done(int code)
 {
-  done();
-  uiControlEnable(uiControl(btnConn));
   if (code == 0) {
-    status("Connected!");
-    connected = true;
-    uiButtonSetText(btnConn, "Disconnect");
-    uiControlEnable(uiControl(boxOp));
     do_auth();
   } else {
+    done();
     status(code == XFER_ERR_CONNECT ?
-      "Cannot connect to host" :
+      "Cannot connect to the server" :
       "Internal error during connection");
     uiControlEnable(uiControl(boxConn));
+    uiControlEnable(uiControl(btnConn));
   }
 }
 
@@ -85,8 +127,6 @@ void btnConnClick(uiButton *_b, void *_u)
     // Connect
     char *host = uiEntryText(entHost);
     int port = uiSpinboxValue(entPort);
-    char *user = uiEntryText(entUser);
-    char *pass = uiEntryText(entPass);
 
     loading();
     statusf("Connecting to %s", host);
@@ -95,8 +135,6 @@ void btnConnClick(uiButton *_b, void *_u)
     xfer_init(&x, host, port, &xfer_done);
 
     free(host);
-    free(user);
-    free(pass);
   } else {
     // Disconnect
     xfer_deinit(&x);
