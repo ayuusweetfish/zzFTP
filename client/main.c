@@ -47,14 +47,18 @@ static inline void status(const char *s)
 } while (0)
 
 // LIST command
-static void auth_read(char *s);
+static void auth_read(int code, char *s);
 void do_auth()
 {
-  xfer_write(&x, "USER qwq", NULL);
-  xfer_read_line(&x, auth_read);
+  xfer_write(&x, "USER qwq\r\n", NULL);
+  xfer_read_mark(&x, auth_read);
 }
-static void auth_read(char *s)
+static void auth_read(int code, char *s)
 {
+  // printf("%d [%s]\n", code, s);
+  if (code == 220) {
+    puts("Logged in");
+  }
 }
 
 void xfer_done(int code)
@@ -95,6 +99,7 @@ void btnConnClick(uiButton *_b, void *_u)
     free(pass);
   } else {
     // Disconnect
+    xfer_deinit(&x);
     status("Disconnected");
     connected = false;
     uiControlEnable(uiControl(boxConn));
@@ -139,7 +144,7 @@ int main()
       uiLabel *lblHost = uiNewLabel("Host");
       uiBoxAppend(boxConnR1, uiControl(lblHost), 0);
       entHost = uiNewEntry();
-      uiEntrySetText(entHost, "66.42.69.75");
+      uiEntrySetText(entHost, "127.0.0.1");
       uiBoxAppend(boxConnR1, uiControl(entHost), 1);
 
       uiLabel *lblPort = uiNewLabel("Port");
