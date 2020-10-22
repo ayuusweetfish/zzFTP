@@ -38,9 +38,13 @@ void rlb_deinit(rlb *b);
 // Either way, the sent mark is terminated with CR-LF
 void send_mark(int fd, int code, const char *msg);
 
+// Creates a new socket and bind it to an ephemeral port.
+// Returns a non-negative descriptor on success and a negative integer on errors
+int sock_ephemeral();
+
 // Creates a new socket and bind it to an ephemeral port,
 // writing the address accessible from the client of `sock_conn` to `o_addr`
-// Returns 0 on success and negative integers on errors
+// Returns 0 on success and a negative integer on errors
 int ephemeral(int sock_conn, uint8_t o_addr[6], int *o_sock_fd);
 
 #endif

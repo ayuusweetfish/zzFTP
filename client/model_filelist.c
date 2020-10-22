@@ -11,12 +11,22 @@ static uiTableModel *model;
 static uiTableModelHandler modelHandler;
 static uiTable *table = NULL;
 
+static bool enabled = false;
 static file_rec *files = NULL;
 static int n_files = 0;
 
+static int modelNumRows(uiTableModelHandler *mh, uiTableModel *m);
+
+void file_list_disable()
+{
+  for (int i = 0; i < modelNumRows(&modelHandler, model); i++)
+    uiTableModelRowDeleted(model, i);
+  enabled = false;
+}
+
 void file_list_reset(int n, file_rec *recs)
 {
-  for (int i = 0; i <= n_files; i++)
+  for (int i = 0; i < modelNumRows(&modelHandler, model); i++)
     uiTableModelRowDeleted(model, i);
   if (files != NULL) {
     for (int i = 0; i < n_files; i++) {
@@ -27,7 +37,7 @@ void file_list_reset(int n, file_rec *recs)
   }
   files = recs;
   n_files = n;
-  for (int i = 0; i <= n; i++)
+  for (int i = 0; i < modelNumRows(&modelHandler, model); i++)
     uiTableModelRowInserted(model, i);
 }
 
@@ -66,7 +76,7 @@ static uiTableValueType modelColumnType(
 
 static int modelNumRows(uiTableModelHandler *mh, uiTableModel *m)
 {
-  return n_files + 1;
+  return (enabled ? n_files + 1 : 0);
 }
 
 static uiTableValue *modelCellValue(
@@ -166,6 +176,7 @@ uiTable *file_list_table()
   uiTableAppendTextColumn(table, "",
     COL_EMPTY, uiTableModelColumnNeverEditable, &p);
 
+/*
   file_rec *fs = malloc(6 * sizeof(file_rec));
   fs[0] = (file_rec) {2, strdup(".."), 0, strdup("")};
   fs[1] = (file_rec) {1, strdup("dir_1"), 0, strdup("quq")};
@@ -174,6 +185,7 @@ uiTable *file_list_table()
   fs[4] = (file_rec) {0, strdup("file_2"), 456, strdup("qxq")};
   fs[5] = (file_rec) {0, strdup("file_3"), 1023, strdup("uwu")};
   file_list_reset(6, fs);
+*/
 
   return table;
 }

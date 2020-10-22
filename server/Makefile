@@ -1,6 +1,6 @@
 CFLAGS := -Wall -O2
 
-server: client.o client_cmds.o io_utils.o main.o path_utils.o
+server: $(patsubst %.c, %.o, $(wildcard *.c))
 	$(LD) -o $@ $^ -lc -lpthread
 
 clean:

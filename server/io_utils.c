@@ -148,7 +148,7 @@ void send_mark(int fd, int code, const char *msg)
   }
 }
 
-int ephemeral(int sock_conn, uint8_t o_addr[6], int *o_sock_fd)
+int sock_ephemeral()
 {
   int sock_eph = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (sock_eph == -1) return -1;
@@ -156,9 +156,20 @@ int ephemeral(int sock_conn, uint8_t o_addr[6], int *o_sock_fd)
   struct sockaddr_in addr = { 0 };
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = INADDR_ANY;
-  if (bind(sock_eph, (struct sockaddr *)&addr, sizeof addr) == -1)
+  if (bind(sock_eph, (struct sockaddr *)&addr, sizeof addr) == -1) {
+    close(sock_eph);
     return -2;
+  }
 
+  return sock_eph;
+}
+
+int ephemeral(int sock_conn, uint8_t o_addr[6], int *o_sock_fd)
+{
+  int sock_eph = sock_ephemeral();
+  if (sock_eph < 0) return sock_eph;
+
+  struct sockaddr_in addr;
   socklen_t addr_len;
 
   // Port
