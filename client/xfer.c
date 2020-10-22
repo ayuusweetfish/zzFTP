@@ -58,6 +58,10 @@ void xfer_init(xfer *x, const char *host, int port, void (*next)(int))
   }
 }
 
+void xfer_init_listen(xfer *x, const xfer *y, void (*next)(int))
+{
+}
+
 void xfer_deinit(xfer *x)
 {
   close(x->fd);
@@ -85,9 +89,14 @@ static void write_thr(struct write_args *p_args)
 
 void xfer_write(xfer *x, const char *str, void (*next)(int))
 {
+  xfer_write_all(x, str, strlen(str), next);
+}
+
+void xfer_write_all(xfer *x, const void *buf, size_t len, void (*next)(int))
+{
   struct write_args *args = malloc(sizeof(struct write_args));
   args->x = x;
-  args->str = strdup(str);
+  args->str = strdup(buf);
   args->next = next;
 
   pthread_t thr;
@@ -164,4 +173,8 @@ void xfer_read_mark(xfer *x, void (*next)(int, char *))
   if (pthread_create(&thr, NULL, (void *)read_mark_thr, args) != 0) {
     (*next)(XFER_ERR_THREAD, NULL);
   }
+}
+
+void xfer_read_all(xfer *x, void (*next)(size_t, char *))
+{
 }

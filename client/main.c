@@ -31,7 +31,11 @@ static uiProgressBar *pbar;
 static uiBox *boxOp;
 static uiButton *btnMode;
 
-static xfer x;
+static char *cwd = NULL;
+
+// x - Control connection
+// y - Data connection
+static xfer x, y;
 static bool connected = false;
 
 static inline void loading() { uiProgressBarSetValue(pbar, -1); }
@@ -47,7 +51,44 @@ static inline void status(const char *s)
   status(s); \
 } while (0)
 
-// LIST command
+// List directory
+static void list_1(int code, char *s);
+void do_list()
+{
+  loading();
+  status("Querying current working directory");
+  xfer_write(&x, "PWD\r\n", NULL);
+  xfer_read_mark(&x, list_1);
+}
+static void list_1(int code, char *s)
+{
+  if (code == 257) {
+    if (cwd != NULL) free(cwd);
+    // Find the directory enclosed by double quotes
+    char *p = strchr(s, '"'),
+         *q = strrchr(s, '"');
+    if (p != NULL) {
+      p++;
+      cwd = malloc(q - p + 1);
+      memcpy(cwd, p, q - p);
+      cwd[q - p] = '\0';
+      // Update status
+      char *s;
+      asprintf(&s, "Directory: %s - retrieving file list", cwd);
+      status(s);
+      free(s);
+    } else {
+      cwd = NULL;
+      done();
+      status("Cannot understand server's working directory response");
+    }
+  } else {
+    done();
+    status("Cannot query current working directory");
+  }
+}
+
+// Connect to the server and log in
 static void auth_1(int code, char *s);
 static void auth_2(int code, char *s);
 static void auth_3(int code, char *s);
@@ -97,6 +138,7 @@ static void auth_3(int code, char *s)
     connected = true;
     uiButtonSetText(btnConn, "Disconnect");
     uiControlEnable(uiControl(boxOp));
+    do_list();
   } else {
     status(code == 530 ?
       "Incorrect credentials" :
@@ -107,7 +149,8 @@ static void auth_3(int code, char *s)
   uiControlEnable(uiControl(btnConn));
 }
 
-void xfer_done(int code)
+// Callback on connected
+void connection_setup(int code)
 {
   if (code == 0) {
     do_auth();
@@ -132,7 +175,7 @@ void btnConnClick(uiButton *_b, void *_u)
     statusf("Connecting to %s", host);
     uiControlDisable(uiControl(boxConn));
     uiControlDisable(uiControl(btnConn));
-    xfer_init(&x, host, port, &xfer_done);
+    xfer_init(&x, host, port, &connection_setup);
 
     free(host);
   } else {
