@@ -33,10 +33,8 @@ static uiButton *btnMode;
 static xfer x;
 static bool connected = false;
 
-static inline void loading() { uiProgressBarSetValue(pbar, -1);
-}
-static inline void done() { uiProgressBarSetValue(pbar, 0);
-}
+static inline void loading() { uiProgressBarSetValue(pbar, -1); }
+static inline void done() { uiProgressBarSetValue(pbar, 0); }
 static inline void status(const char *s)
 {
   puts(s);
@@ -48,6 +46,17 @@ static inline void status(const char *s)
   status(s); \
 } while (0)
 
+// LIST command
+static void auth_read(char *s);
+void do_auth()
+{
+  xfer_write(&x, "USER qwq", NULL);
+  xfer_read_line(&x, auth_read);
+}
+static void auth_read(char *s)
+{
+}
+
 void xfer_done(int code)
 {
   done();
@@ -57,8 +66,9 @@ void xfer_done(int code)
     connected = true;
     uiButtonSetText(btnConn, "Disconnect");
     uiControlEnable(uiControl(boxOp));
+    do_auth();
   } else {
-    status(code == XFER_INIT_ERR_CONNECT ?
+    status(code == XFER_ERR_CONNECT ?
       "Cannot connect to host" :
       "Internal error during connection");
     uiControlEnable(uiControl(boxConn));
