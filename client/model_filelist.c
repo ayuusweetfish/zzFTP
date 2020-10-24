@@ -19,14 +19,21 @@ static int modelNumRows(uiTableModelHandler *mh, uiTableModel *m);
 
 void file_list_disable()
 {
-  for (int i = 0; i < modelNumRows(&modelHandler, model); i++)
+  for (int i = modelNumRows(&modelHandler, model) - 1; i >= 0; i--)
     uiTableModelRowDeleted(model, i);
   enabled = false;
 }
 
+static int file_rec_cmp(const void *_a, const void *_b)
+{
+  const file_rec *a = _a, *b = _b;
+  if (a->is_dir ^ b->is_dir) return 1 - 2 * a->is_dir;
+  return strcmp(a->name, b->name);
+}
+
 void file_list_reset(int n, file_rec *recs)
 {
-  for (int i = 0; i < modelNumRows(&modelHandler, model); i++)
+  for (int i = modelNumRows(&modelHandler, model) - 1; i >= 0; i--)
     uiTableModelRowDeleted(model, i);
   if (files != NULL) {
     for (int i = 0; i < n_files; i++) {
@@ -37,6 +44,8 @@ void file_list_reset(int n, file_rec *recs)
   }
   files = recs;
   n_files = n;
+  enabled = true;
+  qsort(recs, n, sizeof(file_rec), file_rec_cmp);
   for (int i = 0; i < modelNumRows(&modelHandler, model); i++)
     uiTableModelRowInserted(model, i);
 }
@@ -176,7 +185,6 @@ uiTable *file_list_table()
   uiTableAppendTextColumn(table, "",
     COL_EMPTY, uiTableModelColumnNeverEditable, &p);
 
-/*
   file_rec *fs = malloc(6 * sizeof(file_rec));
   fs[0] = (file_rec) {2, strdup(".."), 0, strdup("")};
   fs[1] = (file_rec) {1, strdup("dir_1"), 0, strdup("quq")};
@@ -185,7 +193,6 @@ uiTable *file_list_table()
   fs[4] = (file_rec) {0, strdup("file_2"), 456, strdup("qxq")};
   fs[5] = (file_rec) {0, strdup("file_3"), 1023, strdup("uwu")};
   file_list_reset(6, fs);
-*/
 
   return table;
 }

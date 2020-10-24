@@ -175,6 +175,62 @@ void xfer_read_mark(xfer *x, void (*next)(int, char *))
   }
 }
 
+struct read_all_args {
+  xfer *x;
+  void (*next)(size_t, char *);
+};
+
+struct read_all_cb_args {
+  void (*next)(size_t, char *);
+  size_t len;
+  char *buf;
+};
+
+static void read_all_cb(struct read_all_cb_args *args)
+{
+  (*args->next)(args->len, args->buf);
+  free(args->buf);
+  free(args);
+}
+
+#define READALL_BLOCK_BUF_SIZE 65536
+static void read_all_thr(struct read_all_args *p_args)
+{
+  struct read_all_args args = *p_args;
+  free(p_args);
+
+  size_t cap = 64, len = 0;
+  char *buf = malloc(cap);
+
+  char *block = malloc(READALL_BLOCK_BUF_SIZE);
+  ssize_t read_ret;
+
+  while ((read_ret = read(args.x->fd, block, READALL_BLOCK_BUF_SIZE)) > 0) {
+    while (len + read_ret >= cap) buf = realloc(buf, cap <<= 1);
+    memcpy(buf + len, block, read_ret);
+    len += read_ret;
+  }
+  free(block);
+  buf[len] = '\0';
+
+  if (args.next) {
+    struct read_all_cb_args *cb_args
+      = malloc(sizeof(struct read_all_cb_args));
+    cb_args->next = args.next;
+    cb_args->len = len;
+    cb_args->buf = buf;
+    queue(read_all_cb, cb_args);
+  }
+}
+
 void xfer_read_all(xfer *x, void (*next)(size_t, char *))
 {
+  struct read_all_args *args = malloc(sizeof(struct read_all_args));
+  args->x = x;
+  args->next = (void *)next;
+
+  pthread_t thr;
+  if (pthread_create(&thr, NULL, (void *)read_all_thr, args) != 0) {
+    (*next)(XFER_ERR_THREAD, NULL);
+  }
 }

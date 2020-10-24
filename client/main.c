@@ -3,6 +3,7 @@
 #include "model_filelist.h"
 #include "xfer.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,7 @@ static uiBox *boxOp;
 static uiButton *btnMode;
 
 static char *cwd = NULL;
+static bool passive_mode = true;
 
 // x - Control connection
 // y - Data connection
@@ -51,8 +53,88 @@ static inline void status(const char *s)
   status(s); \
 } while (0)
 
+// Send/receive data
+// If `send_len` is non-negative, the data is sent
+// and `next` will be called with an error code and NULL;
+// Otherwise the data is received, and `next` will be called with the
+// length and the received data
+// Note: the function is not re-entrant
+static ssize_t data_send_len;
+static char *data_send_buf;
+static void (*data_inter)();
+static void (*data_next)(size_t, char *);
+static void data_pasv_1(int code, char *s);
+static void data_port_1(int code, char *s);
+static void data_2(int code);
+void do_data(ssize_t send_len, char *send_buf,
+  void (*inter)(), void (*next)(size_t, char *))
+{
+  loading();
+  data_send_len = send_len;
+  data_send_buf = send_buf;
+  data_inter = inter;
+  data_next = next;
+  if (passive_mode) {
+    // Passive mode
+    status("Entering passive mode");
+    xfer_write(&x, "PASV\r\n", NULL);
+    xfer_read_mark(&x, data_pasv_1);
+  } else {
+    // Active (port) mode
+    // TODO
+  }
+}
+static void data_pasv_1(int code, char *s)
+{
+  if (code != 227) goto data_1_exception;
+
+  char *p = s;
+  while (*p != '\0' && !isdigit(*p)) p++;
+  if (*p == '\0') goto data_1_exception;
+
+  unsigned x[6];
+  if (sscanf(p, "%u,%u,%u,%u,%u,%u",
+        &x[0], &x[1], &x[2], &x[3], &x[4], &x[5]) != 6)
+    goto data_1_exception;
+  for (int i = 0; i < 6; i++)
+    if (x[i] >= 256) goto data_1_exception;
+
+  char host[16];
+  snprintf(host, sizeof host, "%u.%u.%u.%u", x[0], x[1], x[2], x[3]);
+  int port = x[4] * 256 + x[5];
+  statusf("Passive mode: connecting to %s:%d", host, port);
+  xfer_init(&y, host, port, data_2);
+
+  return;
+data_1_exception:
+  done();
+  status("Did not see a valid passive mode response");
+}
+static void data_port_1(int code, char *s)
+{
+}
+static void data_2(int code)
+{
+  if (code == 0) {
+    status("Data connection established, starting transfer");
+    if (data_inter != NULL) (*data_inter)();
+    if (data_send_len >= 0) {
+      // Send
+      // TODO
+    } else {
+      // Receive
+      xfer_read_all(&y, data_next);
+    }
+  } else {
+    done();
+    status("Cannot establish data connection");
+  }
+}
+
 // List directory
 static void list_1(int code, char *s);
+static void list_2();
+static void list_3(size_t len, char *data);
 void do_list()
 {
   loading();
@@ -77,6 +159,8 @@ static void list_1(int code, char *s)
       asprintf(&s, "Directory: %s - retrieving file list", cwd);
       status(s);
       free(s);
+      // Retrieve list
+      do_data(-1, NULL, list_2, list_3);
     } else {
       cwd = NULL;
       done();
@@ -86,6 +170,43 @@ static void list_1(int code, char *s)
     done();
     status("Cannot query current working directory");
   }
+}
+static void list_2()
+{
+  xfer_write(&x, "LIST\r\n", NULL);
+}
+static void list_3(size_t len, char *data)
+{
+  done();
+  xfer_deinit(&y);
+  statusf("Directory: %s", cwd);
+
+  int count = 0;
+  for (char *p = data; *p != '\0'; p++) if (*p == '\n') count++;
+  file_rec *recs = malloc(count * sizeof(file_rec));
+
+  int actual_count = 0;
+  for (char *p = data, *q = p; *p != '\0'; p = q + 1) {
+    for (q = p; *q != '\n'; q++) { }
+    *q = '\0';
+    char attr[16];
+    int size;
+    char d1[8], d2[8], d3[8];
+    char name[64];
+    if (sscanf(p, "%15s%*s%*s%*s%d%7s%7s%7s%63s",
+          attr, &size, d1, d2, d3, name) == 6) {
+      char date[32];
+      snprintf(date, sizeof date, "%s %s %s", d1, d2, d3);
+      recs[actual_count++] = (file_rec) {
+        .is_dir = (attr[0] == 'd'),
+        .name = strdup(name),
+        .size = size,
+        .date = strdup(date),
+      };
+    }
+  }
+
+  file_list_reset(actual_count, recs);
 }
 
 // Connect to the server and log in

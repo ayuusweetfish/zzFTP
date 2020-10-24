@@ -141,7 +141,7 @@ static cmd_result handler_PORT(client *c, const char *arg)
     mark(501, "Incorrect address format.");
     return CMD_RESULT_DONE;
   }
-  for (int i = 0; i < 6; i++) if (x[0] >= 256) {
+  for (int i = 0; i < 6; i++) if (x[i] >= 256) {
     mark(501, "Incorrect address format.");
     return CMD_RESULT_DONE;
   }
