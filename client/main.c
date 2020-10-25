@@ -81,23 +81,35 @@ void do_data(ssize_t send_len, char *send_buf,
     xfer_read_mark(&x, data_pasv_1);
   } else {
     // Active (port) mode
-    // TODO
+    status("Entering active (port) mode");
+    uint8_t addr[6];
+    if (xfer_init_listen_1(&y, &x, addr) != 0) {
+      done();
+      status("Cannot listen on a local port, try passive mode instead");
+      return;
+    }
+    char s[64];
+    snprintf(s, sizeof s, "PORT %d,%d,%d,%d,%d,%d\r\n",
+      (int)addr[0], (int)addr[1], (int)addr[2], (int)addr[3],
+      (int)addr[4], (int)addr[5]);
+    xfer_write(&x, s, NULL);
+    xfer_read_mark(&x, data_port_1);
   }
 }
 static void data_pasv_1(int code, char *s)
 {
-  if (code != 227) goto data_1_exception;
+  if (code != 227) goto exception;
 
   char *p = s;
   while (*p != '\0' && !isdigit(*p)) p++;
-  if (*p == '\0') goto data_1_exception;
+  if (*p == '\0') goto exception;
 
   unsigned x[6];
   if (sscanf(p, "%u,%u,%u,%u,%u,%u",
         &x[0], &x[1], &x[2], &x[3], &x[4], &x[5]) != 6)
-    goto data_1_exception;
+    goto exception;
   for (int i = 0; i < 6; i++)
-    if (x[i] >= 256) goto data_1_exception;
+    if (x[i] >= 256) goto exception;
 
   char host[16];
   snprintf(host, sizeof host, "%u.%u.%u.%u", x[0], x[1], x[2], x[3]);
@@ -105,19 +117,31 @@ static void data_pasv_1(int code, char *s)
   statusf("Passive mode: connecting to %s:%d", host, port);
   xfer_init(&y, host, port, data_2);
 
+  if (data_inter != NULL) (*data_inter)();
+
   return;
-data_1_exception:
+exception:
   done();
   status("Did not see a valid passive mode response");
 }
 static void data_port_1(int code, char *s)
 {
+  if (code != 200) goto exception;
+
+  if (data_inter != NULL) (*data_inter)();
+
+  statusf("Port mode: listening");
+  xfer_init_listen_2(&y, data_2);
+
+  return;
+exception:
+  done();
+  status("Did not see a valid port mode response");
 }
 static void data_2(int code)
 {
   if (code == 0) {
     status("Data connection established, starting transfer");
-    if (data_inter != NULL) (*data_inter)();
     if (data_send_len >= 0) {
       // Send
       // TODO
@@ -307,7 +331,14 @@ void btnConnClick(uiButton *_b, void *_u)
     uiControlEnable(uiControl(boxConn));
     uiControlDisable(uiControl(boxOp));
     uiButtonSetText(btnConn, "Connect");
+    file_list_disable();
   }
+}
+
+void btnModeClick(uiButton *b, void *_u)
+{
+  uiButtonSetText(b, (passive_mode ^= 1) ?
+    "Current mode: Passive" : "Current mode: Active");
 }
 
 int main()
@@ -391,14 +422,15 @@ int main()
   uiBoxSetPadded(boxOp, 1);
   {
     uiBoxAppend(boxOp, uiControl(file_list_table()), 1);
-
-    btnMode = uiNewButton("Mode: Passive");
-    uiBoxAppend(boxOp, uiControl(btnMode), 0);
   }
   uiBoxAppend(boxMain, uiControl(boxOp), 1);
 
   file_list_disable();
   uiControlDisable(uiControl(boxOp));
+
+  btnMode = uiNewButton("Current mode: Passive");
+  uiBoxAppend(boxMain, uiControl(btnMode), 0);
+  uiButtonOnClicked(btnMode, btnModeClick, NULL);
 
   // Run
   uiWindowOnClosing(w, windowOnClosing, NULL);

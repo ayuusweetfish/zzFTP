@@ -6,9 +6,8 @@
 #include <stdint.h>
 
 typedef struct xfer_s {
-  int fd;
+  int fd, pasv_fd;
   rlb b;
-  uint8_t local_addr[6];
 } xfer;
 
 #define XFER_ERR_SOCKET   (-1)
@@ -22,10 +21,12 @@ typedef struct xfer_s {
 void xfer_init(xfer *x, const char *host, int port, void (*next)(int));
 // Initializes the transfer controller by listening on a port
 // The transfer is discard-after-use
-// An already established transfer `y` helps populate the `local_addr` field
+// An already established transfer `y` helps determine the local address
+// and populate the `local_addr` field
 // `next` is called when one connection is established
 // or immediately with an error code
-void xfer_init_listen(xfer *x, const xfer *y, void (*next)(int));
+int xfer_init_listen_1(xfer *x, const xfer *y, uint8_t local_addr[6]);
+void xfer_init_listen_2(xfer *x, void (*next)(int));
 // Closes the transfer controller
 void xfer_deinit(xfer *x);
 

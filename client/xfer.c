@@ -27,12 +27,23 @@ static void conn_thr(struct conn_thr_args *p_args)
   struct conn_thr_args args = *p_args;
   free(p_args);
 
-  if (connect(args.x->fd, (struct sockaddr *)&args.addr, sizeof args.addr) == -1) {
-    close(args.x->fd);
-    queue(args.next, XFER_ERR_CONNECT);
+  bool successful;
+  if (args.addr.sin_addr.s_addr == 0) {
+    // Listen
+    successful = (listen(args.x->pasv_fd, 0) == 0 &&
+      (args.x->fd = accept(args.x->pasv_fd, NULL, NULL)) > 0);
   } else {
+    // Connect
+    successful = (connect(args.x->fd,
+      (struct sockaddr *)&args.addr, sizeof args.addr) == 0);
+  }
+
+  if (successful) {
     rlb_init(&args.x->b, args.x->fd);
     queue(args.next, 0);
+  } else {
+    close(args.x->fd);
+    queue(args.next, XFER_ERR_CONNECT);
   }
 }
 
@@ -58,8 +69,26 @@ void xfer_init(xfer *x, const char *host, int port, void (*next)(int))
   }
 }
 
-void xfer_init_listen(xfer *x, const xfer *y, void (*next)(int))
+int xfer_init_listen_1(xfer *x, const xfer *y, uint8_t local_addr[6])
 {
+  if (ephemeral(y->fd, local_addr, &x->pasv_fd) != 0) return XFER_ERR_SOCKET;
+  return 0;
+}
+
+void xfer_init_listen_2(xfer *x, void (*next)(int))
+{
+  struct conn_thr_args *args = malloc(sizeof(struct conn_thr_args));
+
+  args->x = x;
+  args->addr.sin_family = AF_INET;
+  args->addr.sin_addr.s_addr = 0;
+  args->next = next;
+
+  pthread_t thr;
+  if (pthread_create(&thr, NULL, (void *)conn_thr, args) != 0) {
+    close(x->pasv_fd);
+    (*next)(XFER_ERR_THREAD);
+  }
 }
 
 void xfer_deinit(xfer *x)
