@@ -4,9 +4,12 @@
 #include "xfer.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static int onShouldQuit(void *_unused)
 {
@@ -45,6 +48,10 @@ static inline void loading()
   uiControlDisable(uiControl(btnConn));
   file_list_set_enabled(false);
 }
+static inline void progress(float p)
+{
+  uiProgressBarSetValue(pbar, (int)(p * 100 + 0.5f));
+}
 static inline void done()
 {
   uiProgressBarSetValue(pbar, 0);
@@ -75,6 +82,7 @@ static void (*data_next)(size_t, char *);
 static void data_pasv_1(int code, char *s);
 static void data_port_1(int code, char *s);
 static void data_2(int code);
+static void data_3(size_t len);
 void do_data(ssize_t send_len, char *send_buf,
   void (*inter)(), void (*next)(size_t, char *))
 {
@@ -152,16 +160,26 @@ static void data_2(int code)
   if (code == 0) {
     status("Data connection established, starting transfer");
     if (data_send_len >= 0) {
-      // Send
-      // TODO
+      if (data_send_buf != NULL) {
+        // Send
+        // TODO
+      } else {
+        // Receive
+        xfer_read_all(&y, data_next);
+      }
     } else {
-      // Receive
-      xfer_read_all(&y, data_next);
+      // Receive to file
+      xfer_read_all_to(&y, -(int)data_send_len, data_3);
     }
   } else {
     done();
     status("Cannot establish data connection");
   }
+}
+static void data_3(size_t len)
+{
+  // Progress
+  (*data_next)(len, NULL);
 }
 
 // List directory
@@ -193,7 +211,7 @@ static void list_1(int code, char *s)
       status(s);
       free(s);
       // Retrieve list
-      do_data(-1, NULL, list_2, list_3);
+      do_data(0, NULL, list_2, list_3);
     } else {
       cwd = NULL;
       done();
@@ -259,7 +277,7 @@ static void cwd_1(int code, char *s);
 void do_cwd(const char *name)
 {
   loading();
-  statusf("Changing working directory");
+  status("Changing working directory");
   char *s;
   asprintf(&s, "CWD %s\r\n", name);
   xfer_write(&x, s, NULL);
@@ -274,6 +292,57 @@ static void cwd_1(int code, char *s)
   } else {
     done();
     status("Did not see a valid working directory change result");
+  }
+}
+
+// Retrieve file
+// Non-reentrant
+static void retr_1();
+static void retr_2(size_t len, char *data);
+static const char *retr_name = NULL;
+static int retr_size = 0;
+static char retr_size_str[16];
+static int retr_out_fd = -1;
+void do_retr(const char *name, int size, const char *local_path)
+{
+  loading();
+  statusf("Requesting file %s", name);
+
+  int out_fd = open(local_path, O_WRONLY | O_CREAT, 0644);
+  if (out_fd == -1) {
+    done();
+    statusf("Cannot create local file: %s", strerror(errno));
+    return;
+  }
+
+  retr_name = name;
+  retr_size = size;
+  get_size_str(retr_size_str, size);
+  retr_out_fd = out_fd;
+  do_data(-out_fd, NULL, retr_1, retr_2);
+}
+static void retr_1()
+{
+  char *s;
+  asprintf(&s, "RETR %s\r\n", retr_name);
+  xfer_write(&x, s, NULL);
+  xfer_read_mark(&x, NULL);   // Code 150
+}
+static void retr_2(size_t len, char *data)
+{
+  if (len == (size_t)-1) {
+    // Finish
+    xfer_read_mark(&x, NULL); // Code 226
+    close(retr_out_fd);
+
+    done();
+    statusf("Successfully downloaded %s (%s)", retr_name, retr_size_str);
+  } else {
+    char size_xferred[16];
+    get_size_str(size_xferred, len);
+    statusf("Downloading file %s (%s / %s)",
+      retr_name, size_xferred, retr_size_str);
+    progress((float)len / retr_size);
   }
 }
 
@@ -384,6 +453,9 @@ void file_list_download(const struct file_rec_s *r)
   if (r->is_dir) {
     do_cwd(r->name);
   } else {
+    char *local_path = uiSaveFile(w);
+    if (local_path != NULL)
+      do_retr(r->name, r->size, local_path);
   }
 }
 

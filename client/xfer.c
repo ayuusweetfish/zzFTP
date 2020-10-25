@@ -268,3 +268,67 @@ void xfer_read_all(xfer *x, void (*next)(size_t, char *))
     (*next)(XFER_ERR_THREAD, NULL);
   }
 }
+
+struct read_all_to_args {
+  xfer *x;
+  int out_fd;
+  void (*next)(size_t);
+};
+
+struct read_all_to_cb_args {
+  void (*next)(size_t);
+  size_t len;
+};
+
+static void read_all_to_cb(struct read_all_to_cb_args *args)
+{
+  (*args->next)(args->len);
+  free(args);
+}
+
+static void read_all_to_thr(struct read_all_to_args *p_args)
+{
+  struct read_all_to_args args = *p_args;
+  free(p_args);
+
+  size_t len = 0;
+
+  char *block = malloc(READALL_BLOCK_BUF_SIZE);
+  ssize_t read_ret;
+
+  while ((read_ret = read(args.x->fd, block, READALL_BLOCK_BUF_SIZE)) > 0) {
+    len += read_ret;
+    if (write(args.out_fd, block, read_ret) == -1) {
+      warn("read_all_to(): write() failed");
+      break;
+    }
+    if (args.next) {
+      struct read_all_to_cb_args *cb_args
+        = malloc(sizeof(struct read_all_to_cb_args));
+      cb_args->next = args.next;
+      cb_args->len = len;
+      queue(read_all_to_cb, cb_args);
+    }
+  }
+  free(block);
+
+  if (args.next) {
+    struct read_all_to_cb_args *cb_args
+      = malloc(sizeof(struct read_all_to_cb_args));
+    cb_args->next = args.next;
+    cb_args->len = (size_t)-1;
+    queue(read_all_to_cb, cb_args);
+  }
+}
+
+void xfer_read_all_to(xfer *x, int fd, void (*next)(size_t))
+{
+  struct read_all_to_args *args = malloc(sizeof(struct read_all_to_args));
+  args->x = x;
+  args->out_fd = fd;
+  args->next = (void *)next;
+
+  if (spawn_thread(x, read_all_to_thr, args) != 0) {
+    (*next)(XFER_ERR_THREAD);
+  }
+}

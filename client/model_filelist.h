@@ -3,6 +3,7 @@
 
 #include "libui/ui.h"
 
+#include <stdio.h>
 #include <stdbool.h>
 
 uiTable *file_list_table();
@@ -20,5 +21,18 @@ void file_list_reset(int n, file_rec *recs);
 
 // Externally implemented
 void file_list_download(const struct file_rec_s *r);
+
+// Helper function
+static inline void get_size_str(char s[16], size_t x)
+{
+  if ((x >> 30) > 0)
+    snprintf(s, 16, "%.2f GiB", (float)x / (1LL << 30));
+  else if ((x >> 20) > 0)
+    snprintf(s, 16, "%.2f MiB", (float)x / (1LL << 20));
+  else if ((x >> 10) > 0)
+    snprintf(s, 16, "%.2f KiB", (float)x / (1LL << 10));
+  else
+    snprintf(s, 16, "%zd Byte%s", x, x == 1 ? "" : "s");
+}
 
 #endif

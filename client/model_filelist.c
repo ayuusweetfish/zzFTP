@@ -123,8 +123,8 @@ static uiTableValue *modelCellValue(
       if (files[row].is_dir) {
         return uiNewTableValueString("");
       } else {
-        char s[32];
-        snprintf(s, sizeof s, "%d", files[row].size);
+        char s[16];
+        get_size_str(s, files[row].size);
         return uiNewTableValueString(s);
       }
     case COL_DATE: return uiNewTableValueString(files[row].date);
