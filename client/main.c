@@ -70,25 +70,25 @@ static inline void status(const char *s)
 } while (0)
 
 // Send/receive data
-// If `send_len` is non-negative, the data is sent
+// If `fd` is positive, the data is read from the descriptor and sent,
 // and `next` will be called with an error code and NULL;
-// Otherwise the data is received, and `next` will be called with the
-// length and the received data
+// Otherwise the data is received, and `next` will be called with:
+//  - the length and the received data, if `fd` is zero;
+//  - the length, if `fd` is negative, where the absolute value
+//    is taken as the descriptor and written to
 // Note: the function is not re-entrant
-static ssize_t data_send_len;
-static char *data_send_buf;
+static int data_fd;
 static void (*data_inter)();
 static void (*data_next)(size_t, char *);
 static void data_pasv_1(int code, char *s);
 static void data_port_1(int code, char *s);
 static void data_2(int code);
 static void data_3(size_t len);
-void do_data(ssize_t send_len, char *send_buf,
+void do_data(int fd,
   void (*inter)(), void (*next)(size_t, char *))
 {
   loading();
-  data_send_len = send_len;
-  data_send_buf = send_buf;
+  data_fd = fd;
   data_inter = inter;
   data_next = next;
   if (passive_mode) {
@@ -159,17 +159,15 @@ static void data_2(int code)
 {
   if (code == 0) {
     status("Data connection established, starting transfer");
-    if (data_send_len >= 0) {
-      if (data_send_buf != NULL) {
-        // Send
-        // TODO
-      } else {
-        // Receive
-        xfer_read_all(&y, data_next);
-      }
-    } else {
+    if (data_fd > 0) {
+      // Send from file
+      // TODO
+    } else if (data_fd < 0) {
       // Receive to file
-      xfer_read_all_to(&y, -(int)data_send_len, data_3);
+      xfer_read_all_to(&y, -data_fd, data_3);
+    } else {
+      // Receive to memory
+      xfer_read_all(&y, data_next);
     }
   } else {
     done();
@@ -211,7 +209,7 @@ static void list_1(int code, char *s)
       status(s);
       free(s);
       // Retrieve list
-      do_data(0, NULL, list_2, list_3);
+      do_data(0, list_2, list_3);
     } else {
       cwd = NULL;
       done();
@@ -420,7 +418,7 @@ void do_retr(const char *name, int size, const char *local_path)
   retr_size = size;
   get_size_str(retr_size_str, size);
   retr_out_fd = out_fd;
-  do_data(-out_fd, NULL, retr_1, retr_2);
+  do_data(-out_fd, retr_1, retr_2);
 }
 static void retr_1()
 {
