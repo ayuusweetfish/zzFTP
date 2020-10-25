@@ -140,6 +140,9 @@ static void modelSetCellValue(
   uiTableModelHandler *mh, uiTableModel *m, int row, int col, const uiTableValue *val)
 {
   printf("%d %d\n", row, col);
+  if (col == COL_DOWNLOAD) {
+    file_list_download(&files[row]);
+  }
 }
 
 uiTable *file_list_table()

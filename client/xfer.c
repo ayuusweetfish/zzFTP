@@ -189,6 +189,8 @@ static void read_mark_thr(struct read_mark_args *p_args)
     cb_args->code = code;
     cb_args->buf = buf;
     queue(read_mark_cb, cb_args);
+  } else {
+    free(buf);
   }
 }
 
@@ -249,6 +251,8 @@ static void read_all_thr(struct read_all_args *p_args)
     cb_args->len = len;
     cb_args->buf = buf;
     queue(read_all_cb, cb_args);
+  } else {
+    free(buf);
   }
 }
 

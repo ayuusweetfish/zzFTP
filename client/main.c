@@ -198,18 +198,30 @@ static void list_1(int code, char *s)
 static void list_2()
 {
   xfer_write(&x, "LIST\r\n", NULL);
+  xfer_read_mark(&x, NULL);   // Code 150
 }
 static void list_3(size_t len, char *data)
 {
+  xfer_read_mark(&x, NULL);   // Code 226
+
   done();
   xfer_deinit(&y);
   statusf("Directory: %s", cwd);
 
-  int count = 0;
+  int count = 1;
   for (char *p = data; *p != '\0'; p++) if (*p == '\n') count++;
   file_rec *recs = malloc(count * sizeof(file_rec));
 
   int actual_count = 0;
+  // Parent
+  if (strcmp(cwd, "/") != 0)
+    recs[actual_count++] = (file_rec) {
+      .is_dir = 2,
+      .name = strdup(".."),
+      .size = 0,
+      .date = strdup(""),
+    };
+  // Entries
   for (char *p = data, *q = p; *p != '\0'; p = q + 1) {
     for (q = p; *q != '\n'; q++) { }
     *q = '\0';
@@ -231,6 +243,29 @@ static void list_3(size_t len, char *data)
   }
 
   file_list_reset(actual_count, recs);
+}
+
+// Change directory
+static void cwd_1(int code, char *s);
+void do_cwd(const char *name)
+{
+  loading();
+  statusf("Changing working directory");
+  char *s;
+  asprintf(&s, "CWD %s\r\n", name);
+  xfer_write(&x, s, NULL);
+  free(s);
+  xfer_read_mark(&x, cwd_1);
+}
+static void cwd_1(int code, char *s)
+{
+  printf("%d %s\n", code, s);
+  if (code == 250) {
+    do_list();
+  } else {
+    done();
+    status("Did not see a valid working directory change result");
+  }
 }
 
 // Connect to the server and log in
@@ -339,6 +374,14 @@ void btnModeClick(uiButton *b, void *_u)
 {
   uiButtonSetText(b, (passive_mode ^= 1) ?
     "Current mode: Passive" : "Current mode: Active");
+}
+
+void file_list_download(const struct file_rec_s *r)
+{
+  if (r->is_dir) {
+    do_cwd(r->name);
+  } else {
+  }
 }
 
 int main()

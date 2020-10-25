@@ -17,4 +17,7 @@ typedef struct file_rec_s {
 void file_list_disable();
 void file_list_reset(int n, file_rec *recs);
 
+// Externally implemented
+void file_list_download(const struct file_rec_s *r);
+
 #endif
