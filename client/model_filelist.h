@@ -20,6 +20,7 @@ void file_list_set_enabled(bool enabled);
 void file_list_reset(int n, file_rec *recs);
 
 // Externally implemented
+void file_list_rename(const char *from, const char *to);
 void file_list_download(const struct file_rec_s *r);
 
 // Helper function

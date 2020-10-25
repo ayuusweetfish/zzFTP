@@ -286,13 +286,58 @@ void do_cwd(const char *name)
 }
 static void cwd_1(int code, char *s)
 {
-  printf("%d %s\n", code, s);
   if (code == 250) {
     do_list();
   } else {
     done();
     status("Did not see a valid working directory change result");
   }
+}
+
+// Rename
+static void rename_1(int code, char *s);
+static void rename_2(int code, char *s);
+static char *rename_from = NULL;
+static char *rename_to = NULL;
+void do_rename(const char *from, const char *to)
+{
+  loading();
+  rename_from = strdup(from);
+  rename_to = strdup(to);
+  statusf("Renaming %s to %s (RNFR)", rename_from, rename_to);
+
+  char *s;
+  asprintf(&s, "RNFR %s\r\n", rename_from);
+  xfer_write(&x, s, NULL);
+  free(s);
+  xfer_read_mark(&x, rename_1);
+}
+static void rename_1(int code, char *s)
+{
+  if (code == 250) {
+    char *s;
+    asprintf(&s, "RNTO %s\r\n", rename_to);
+    xfer_write(&x, s, NULL);
+    free(s);
+    xfer_read_mark(&x, rename_2);
+  } else {
+    done();
+    status("Did not see a valid rename-from response");
+    free(rename_from);
+    free(rename_to);
+  }
+}
+static void rename_2(int code, char *s)
+{
+  if (code == 250) {
+    statusf("Successfully renamed \"%s\" to \"%s\"", rename_from, rename_to);
+    do_list();
+  } else {
+    done();
+    status("Did not see a valid rename-to response");
+  }
+  free(rename_from);
+  free(rename_to);
 }
 
 // Retrieve file
@@ -308,7 +353,7 @@ void do_retr(const char *name, int size, const char *local_path)
   loading();
   statusf("Requesting file %s", name);
 
-  int out_fd = open(local_path, O_WRONLY | O_CREAT, 0644);
+  int out_fd = open(local_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   if (out_fd == -1) {
     done();
     statusf("Cannot create local file: %s", strerror(errno));
@@ -336,11 +381,11 @@ static void retr_2(size_t len, char *data)
     close(retr_out_fd);
 
     done();
-    statusf("Successfully downloaded %s (%s)", retr_name, retr_size_str);
+    statusf("Successfully downloaded \"%s\" (%s)", retr_name, retr_size_str);
   } else {
     char size_xferred[16];
     get_size_str(size_xferred, len);
-    statusf("Downloading file %s (%s / %s)",
+    statusf("Downloading \"%s\" (%s / %s)",
       retr_name, size_xferred, retr_size_str);
     progress((float)len / retr_size);
   }
@@ -446,6 +491,11 @@ void btnModeClick(uiButton *b, void *_u)
 {
   uiButtonSetText(b, (passive_mode ^= 1) ?
     "Current mode: Passive" : "Current mode: Active");
+}
+
+void file_list_rename(const char *from, const char *to)
+{
+  do_rename(from, to);
 }
 
 void file_list_download(const struct file_rec_s *r)

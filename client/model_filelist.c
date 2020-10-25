@@ -65,7 +65,6 @@ enum modelColumn {
   COL_SIZE,
   COL_DATE,
   COL_DOWNLOAD,
-  COL_RENAME,
   COL_RENAMABLE,
   COL_DELETE,
   COL_DELETABLE,
@@ -106,10 +105,10 @@ static uiTableValue *modelCellValue(
     switch (col) {
       case COL_ICON: return uiNewTableValueImage(imgPlus);
       case COL_DOWNLOAD: return uiNewTableValueString("Upload");
-      case COL_RENAME: return uiNewTableValueString("Make dir");
+      case COL_DELETE: return uiNewTableValueString("Make dir");
       case COL_ENABLED: return uiNewTableValueInt(enabled);
-      case COL_RENAMABLE: return uiNewTableValueInt(enabled && 1);
-      case COL_DELETABLE: return uiNewTableValueInt(enabled && 0);
+      case COL_RENAMABLE: return uiNewTableValueInt(0);
+      case COL_DELETABLE: return uiNewTableValueInt(enabled);
       case COL_TEXTCOLOUR: return uiNewTableValueColor(0, 0, 0, 1);
       default: return uiNewTableValueString("");
     }
@@ -132,8 +131,6 @@ static uiTableValue *modelCellValue(
       return uiNewTableValueString(
         files[row].is_dir == 2 ? "Go up" :
         files[row].is_dir == 1 ? "Open" : "Download");
-    case COL_RENAME:
-      return uiNewTableValueString(files[row].is_dir != 2 ? "Rename" : "");
     case COL_DELETE:
       return uiNewTableValueString(files[row].is_dir != 2 ? "Delete" : "");
     case COL_ENABLED: return uiNewTableValueInt(enabled);
@@ -155,6 +152,9 @@ static void modelSetCellValue(
   printf("%d %d\n", row, col);
   if (col == COL_DOWNLOAD) {
     file_list_download(&files[row]);
+  } else if (col == COL_NAME) {
+    const char *s = uiTableValueString(val);
+    file_list_rename(files[row].name, s);
   }
 }
 
@@ -187,15 +187,13 @@ uiTable *file_list_table()
   };
 
   uiTableAppendImageTextColumn(table, "Name",
-    COL_ICON, COL_NAME, uiTableModelColumnNeverEditable, &p);
+    COL_ICON, COL_NAME, COL_RENAMABLE, &p);
   uiTableAppendTextColumn(table, "Size",
     COL_SIZE, uiTableModelColumnNeverEditable, &p);
   uiTableAppendTextColumn(table, "Modified at",
     COL_DATE, uiTableModelColumnNeverEditable, &p);
   uiTableAppendButtonColumn(table, "",
     COL_DOWNLOAD, COL_ENABLED);
-  uiTableAppendButtonColumn(table, "",
-    COL_RENAME, COL_RENAMABLE);
   uiTableAppendButtonColumn(table, "",
     COL_DELETE, COL_DELETABLE);
   uiTableAppendTextColumn(table, "",
