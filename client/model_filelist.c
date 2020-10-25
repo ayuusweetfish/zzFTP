@@ -63,6 +63,31 @@ void file_list_reset(int n, file_rec *recs)
     uiTableModelRowInserted(model, i);
 }
 
+static inline bool file_exists(const char *name)
+{
+  for (int i = 0; i < n_files; i++)
+    if (strcmp(files[i].name, name) == 0) return true;
+  return false;
+}
+
+char *file_list_get_upload_name(const char *local_path)
+{
+  const char *f = strrchr(local_path, '/');
+  f = (f == NULL ? local_path : f + 1);
+
+  if (!file_exists(f)) return strdup(f);
+
+  char *out = malloc(strlen(f) + 10);
+  const char *dot = strrchr(f, '.');
+  dot = (dot == NULL ? strrchr(f, '\0') : dot);
+  size_t base_len = dot - f;
+  memcpy(out, f, base_len);
+  for (int i = 1; ; i++) {
+    sprintf(out + base_len, "_%d%s", i, dot);
+    if (!file_exists(out)) return out;
+  }
+}
+
 enum modelColumn {
   COL_ENABLED = 0,
   COL_ICON,
@@ -159,7 +184,13 @@ static void modelSetCellValue(
 {
   printf("%d %d\n", row, col);
   if (col == COL_DOWNLOAD) {
-    file_list_download(&files[row]);
+    if (row != n_files) {
+      // Download
+      file_list_download(&files[row]);
+    } else {
+      // Upload
+      file_list_upload();
+    }
   } else if (col == COL_NAME) {
     const char *s = uiTableValueString(val);
     file_list_rename(files[row].name, s);
@@ -170,13 +201,7 @@ static void modelSetCellValue(
       char s[32];
       for (int i = 1; ; i++) {
         snprintf(s, sizeof s, "new_folder_%d", i);
-        bool found = false;
-        for (int j = 0; j < n_files; j++)
-          if (strcmp(s, files[j].name) == 0) {
-            found = true;
-            break;
-          }
-        if (!found) break;
+        if (!file_exists(s)) break;
       }
       file_list_mkdir(s);
     } else {

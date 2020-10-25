@@ -269,26 +269,27 @@ void xfer_read_all(xfer *x, void (*next)(size_t, char *))
   }
 }
 
-struct read_all_to_args {
+struct io_all_args {
   xfer *x;
-  int out_fd;
+  int local_fd;
   void (*next)(size_t);
 };
 
-struct read_all_to_cb_args {
+struct io_all_cb_args {
   void (*next)(size_t);
   size_t len;
 };
 
-static void read_all_to_cb(struct read_all_to_cb_args *args)
+static void io_all_cb(struct io_all_cb_args *args)
 {
   (*args->next)(args->len);
   free(args);
 }
 
-static void read_all_to_thr(struct read_all_to_args *p_args)
+// Read all to file descriptor
+static void read_all_to_thr(struct io_all_args *p_args)
 {
-  struct read_all_to_args args = *p_args;
+  struct io_all_args args = *p_args;
   free(p_args);
 
   size_t len = 0;
@@ -298,37 +299,86 @@ static void read_all_to_thr(struct read_all_to_args *p_args)
 
   while ((read_ret = read(args.x->fd, block, READALL_BLOCK_BUF_SIZE)) > 0) {
     len += read_ret;
-    if (write(args.out_fd, block, read_ret) == -1) {
+    if (write(args.local_fd, block, read_ret) == -1) {
       warn("read_all_to(): write() failed");
       break;
     }
     if (args.next) {
-      struct read_all_to_cb_args *cb_args
-        = malloc(sizeof(struct read_all_to_cb_args));
+      struct io_all_cb_args *cb_args
+        = malloc(sizeof(struct io_all_cb_args));
       cb_args->next = args.next;
       cb_args->len = len;
-      queue(read_all_to_cb, cb_args);
+      queue(io_all_cb, cb_args);
     }
   }
   free(block);
 
   if (args.next) {
-    struct read_all_to_cb_args *cb_args
-      = malloc(sizeof(struct read_all_to_cb_args));
+    struct io_all_cb_args *cb_args
+      = malloc(sizeof(struct io_all_cb_args));
     cb_args->next = args.next;
     cb_args->len = (size_t)-1;
-    queue(read_all_to_cb, cb_args);
+    queue(io_all_cb, cb_args);
   }
 }
 
 void xfer_read_all_to(xfer *x, int fd, void (*next)(size_t))
 {
-  struct read_all_to_args *args = malloc(sizeof(struct read_all_to_args));
+  struct io_all_args *args = malloc(sizeof(struct io_all_args));
   args->x = x;
-  args->out_fd = fd;
+  args->local_fd = fd;
   args->next = (void *)next;
 
   if (spawn_thread(x, read_all_to_thr, args) != 0) {
+    (*next)(XFER_ERR_THREAD);
+  }
+}
+
+// Write all from file descriptor
+// TODO: DRY?
+static void write_all_from_thr(struct io_all_args *p_args)
+{
+  struct io_all_args args = *p_args;
+  free(p_args);
+
+  size_t len = 0;
+
+  char *block = malloc(READALL_BLOCK_BUF_SIZE);
+  ssize_t read_ret;
+
+  while ((read_ret = read(args.local_fd, block, READALL_BLOCK_BUF_SIZE)) > 0) {
+    len += read_ret;
+    if (write_all(args.x->fd, block, read_ret) != 0) {
+      warn("write_all_from(): write_all() failed");
+      break;
+    }
+    if (args.next) {
+      struct io_all_cb_args *cb_args
+        = malloc(sizeof(struct io_all_cb_args));
+      cb_args->next = args.next;
+      cb_args->len = len;
+      queue(io_all_cb, cb_args);
+    }
+  }
+  free(block);
+
+  if (args.next) {
+    struct io_all_cb_args *cb_args
+      = malloc(sizeof(struct io_all_cb_args));
+    cb_args->next = args.next;
+    cb_args->len = (size_t)-1;
+    queue(io_all_cb, cb_args);
+  }
+}
+
+void xfer_write_all_from(xfer *x, int fd, void (*next)(size_t))
+{
+  struct io_all_args *args = malloc(sizeof(struct io_all_args));
+  args->x = x;
+  args->local_fd = fd;
+  args->next = (void *)next;
+
+  if (spawn_thread(x, write_all_from_thr, args) != 0) {
     (*next)(XFER_ERR_THREAD);
   }
 }

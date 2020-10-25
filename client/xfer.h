@@ -34,6 +34,8 @@ void xfer_write(xfer *x, const char *str, void (*next)(int));
 void xfer_write_all(xfer *x, const void *buf, size_t len, void (*next)(int));
 void xfer_read_mark(xfer *x, void (*next)(int, char *));
 void xfer_read_all(xfer *x, void (*next)(size_t, char *));
+
 void xfer_read_all_to(xfer *x, int fd, void (*next)(size_t));
+void xfer_write_all_from(xfer *x, int fd, void (*next)(size_t));
 
 #endif

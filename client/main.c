@@ -161,7 +161,7 @@ static void data_2(int code)
     status("Data connection established, starting transfer");
     if (data_fd > 0) {
       // Send from file
-      // TODO
+      xfer_write_all_from(&y, data_fd, data_3);
     } else if (data_fd < 0) {
       // Receive to file
       xfer_read_all_to(&y, -data_fd, data_3);
@@ -425,12 +425,14 @@ static void retr_1()
   char *s;
   asprintf(&s, "RETR %s\r\n", retr_name);
   xfer_write(&x, s, NULL);
+  free(s);
   xfer_read_mark(&x, NULL);   // Code 150
 }
 static void retr_2(size_t len, char *data)
 {
   if (len == (size_t)-1) {
     // Finish
+    xfer_deinit(&y);
     xfer_read_mark(&x, NULL); // Code 226
     close(retr_out_fd);
 
@@ -443,6 +445,74 @@ static void retr_2(size_t len, char *data)
       retr_name, size_xferred, retr_size_str);
     progress((float)len / retr_size);
   }
+}
+
+// Store file
+// Non-reentrant
+static void stor_1();
+static void stor_2(size_t len, char *data);
+static void stor_3(int code, char *s);
+static char *stor_name = NULL;
+static int stor_size = 0;
+static char stor_size_str[16];
+static int stor_in_fd = -1;
+void do_stor(const char *name, const char *local_path)
+{
+  loading();
+  statusf("Storing file %s", name);
+
+  int in_fd = open(local_path, O_RDONLY);
+  if (in_fd == -1) {
+    done();
+    statusf("Cannot open local file: %s", strerror(errno));
+    return;
+  }
+
+  off_t size = lseek(in_fd, 0, SEEK_END);
+  if (size == -1) size = 0;
+  lseek(in_fd, 0, SEEK_SET);
+
+  stor_name = strdup(name);
+  stor_size = (int)size;
+
+  get_size_str(stor_size_str, (int)size);
+  stor_in_fd = in_fd;
+  do_data(+in_fd, stor_1, stor_2);
+}
+static void stor_1()
+{
+  char *s;
+  asprintf(&s, "STOR %s\r\n", stor_name);
+  xfer_write(&x, s, NULL);
+  free(s);
+  xfer_read_mark(&x, NULL);   // Code 150
+}
+static void stor_2(size_t len, char *data)
+{
+  if (len == (size_t)-1) {
+    // Finish
+    xfer_deinit(&y);
+    xfer_read_mark(&x, stor_3); // Code 226
+    close(stor_in_fd);
+    status("Successfully uploaded, awaiting confirmation");
+  } else {
+    char size_xferred[16];
+    get_size_str(size_xferred, len);
+    statusf("Uploading \"%s\" (%s / %s)",
+      stor_name, size_xferred, stor_size_str);
+    progress((float)len / stor_size);
+  }
+}
+static void stor_3(int code, char *s)
+{
+  if (code == 226) {
+    done();
+    statusf("Successfully uploaded \"%s\" (%s)", stor_name, stor_size_str);
+    do_list();
+  } else {
+    status("Did not see a valid upload finish confirmation");
+  }
+  free(stor_name);
 }
 
 // Connect to the server and log in
@@ -558,9 +628,21 @@ void file_list_download(const struct file_rec_s *r)
     do_cwd(r->name);
   } else {
     char *local_path = uiSaveFile(w);
-    if (local_path != NULL)
+    if (local_path != NULL) {
       do_retr(r->name, r->size, local_path);
+      free(local_path);
+    }
   }
+}
+
+void file_list_upload()
+{
+  char *local_path = uiOpenFile(w);
+  if (local_path == NULL) return;
+  char *upload_name = file_list_get_upload_name(local_path);
+  do_stor(upload_name, local_path);
+  free(upload_name);
+  free(local_path);
 }
 
 void file_list_mkdir(const char *name)
