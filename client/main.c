@@ -29,7 +29,6 @@ static uiButton *btnConn;
 static uiLabel *lblStatus;
 static uiProgressBar *pbar;
 
-static uiBox *boxOp;
 static uiButton *btnMode;
 
 static char *cwd = NULL;
@@ -40,8 +39,18 @@ static bool passive_mode = true;
 static xfer x, y;
 static bool connected = false;
 
-static inline void loading() { uiProgressBarSetValue(pbar, -1); }
-static inline void done() { uiProgressBarSetValue(pbar, 0); }
+static inline void loading()
+{
+  uiProgressBarSetValue(pbar, -1);
+  uiControlDisable(uiControl(btnConn));
+  file_list_set_enabled(false);
+}
+static inline void done()
+{
+  uiProgressBarSetValue(pbar, 0);
+  uiControlEnable(uiControl(btnConn));
+  file_list_set_enabled(true);
+}
 static inline void status(const char *s)
 {
   puts(s);
@@ -292,7 +301,6 @@ static void auth_1(int code, char *s)
     done();
     status("Did not see a valid welcome mark");
     uiControlEnable(uiControl(boxConn));
-    uiControlEnable(uiControl(btnConn));
   }
 }
 static void auth_2(int code, char *s)
@@ -308,16 +316,15 @@ static void auth_2(int code, char *s)
     done();
     status("Did not see a valid password request mark");
     uiControlEnable(uiControl(boxConn));
-    uiControlEnable(uiControl(btnConn));
   }
 }
 static void auth_3(int code, char *s)
 {
+  done();
   if (code == 230) {
     status("Logged in");
     connected = true;
     uiButtonSetText(btnConn, "Disconnect");
-    uiControlEnable(uiControl(boxOp));
     do_list();
   } else {
     status(code == 530 ?
@@ -325,8 +332,6 @@ static void auth_3(int code, char *s)
       "Did not see a valid log in mark");
     uiControlEnable(uiControl(boxConn));
   }
-  done();
-  uiControlEnable(uiControl(btnConn));
 }
 
 // Callback on connected
@@ -340,7 +345,6 @@ void connection_setup(int code)
       "Cannot connect to the server" :
       "Internal error during connection");
     uiControlEnable(uiControl(boxConn));
-    uiControlEnable(uiControl(btnConn));
   }
 }
 
@@ -354,19 +358,18 @@ void btnConnClick(uiButton *_b, void *_u)
     loading();
     statusf("Connecting to %s", host);
     uiControlDisable(uiControl(boxConn));
-    uiControlDisable(uiControl(btnConn));
     xfer_init(&x, host, port, &connection_setup);
 
     free(host);
   } else {
     // Disconnect
     xfer_deinit(&x);
+    done();
     status("Disconnected");
     connected = false;
     uiControlEnable(uiControl(boxConn));
-    uiControlDisable(uiControl(boxOp));
     uiButtonSetText(btnConn, "Connect");
-    file_list_disable();
+    file_list_clear();
   }
 }
 
@@ -461,14 +464,14 @@ int main()
   uiBoxAppend(boxMain, uiControl(lblStatus), 0);
 
   // Box for operations
-  boxOp = uiNewVerticalBox();
+  uiBox *boxOp = uiNewVerticalBox();
   uiBoxSetPadded(boxOp, 1);
   {
     uiBoxAppend(boxOp, uiControl(file_list_table()), 1);
   }
   uiBoxAppend(boxMain, uiControl(boxOp), 1);
 
-  file_list_disable();
+  file_list_clear();
   uiControlDisable(uiControl(boxOp));
 
   btnMode = uiNewButton("Current mode: Passive");

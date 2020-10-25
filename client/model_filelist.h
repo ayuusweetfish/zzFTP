@@ -14,7 +14,8 @@ typedef struct file_rec_s {
   char *date;
 } file_rec;
 
-void file_list_disable();
+void file_list_clear();
+void file_list_set_enabled(bool enabled);
 void file_list_reset(int n, file_rec *recs);
 
 // Externally implemented

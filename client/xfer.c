@@ -16,6 +16,12 @@
 
 #define queue(_fn, _arg) uiQueueMain((void *)(_fn), (void *)(_arg));
 
+static inline int spawn_thread(xfer *x, void *fn, void *arg)
+{
+  pthread_t thr;
+  return pthread_create(&thr, NULL, fn, arg);
+}
+
 struct conn_thr_args {
   xfer *x;
   struct sockaddr_in addr;
@@ -62,8 +68,7 @@ void xfer_init(xfer *x, const char *host, int port, void (*next)(int))
   args->addr.sin_port = htons(port);
   args->next = next;
 
-  pthread_t thr;
-  if (pthread_create(&thr, NULL, (void *)conn_thr, args) != 0) {
+  if (spawn_thread(x, conn_thr, args) != 0) {
     close(fd);
     (*next)(XFER_ERR_THREAD);
   }
@@ -84,8 +89,7 @@ void xfer_init_listen_2(xfer *x, void (*next)(int))
   args->addr.sin_addr.s_addr = 0;
   args->next = next;
 
-  pthread_t thr;
-  if (pthread_create(&thr, NULL, (void *)conn_thr, args) != 0) {
+  if (spawn_thread(x, conn_thr, args) != 0) {
     close(x->pasv_fd);
     (*next)(XFER_ERR_THREAD);
   }
@@ -128,8 +132,7 @@ void xfer_write_all(xfer *x, const void *buf, size_t len, void (*next)(int))
   args->str = strdup(buf);
   args->next = next;
 
-  pthread_t thr;
-  if (pthread_create(&thr, NULL, (void *)write_thr, args) != 0) {
+  if (spawn_thread(x, write_thr, args) != 0) {
     (*next)(XFER_ERR_THREAD);
   }
 }
@@ -200,8 +203,7 @@ void xfer_read_mark(xfer *x, void (*next)(int, char *))
   args->x = x;
   args->next = (void *)next;
 
-  pthread_t thr;
-  if (pthread_create(&thr, NULL, (void *)read_mark_thr, args) != 0) {
+  if (spawn_thread(x, read_mark_thr, args) != 0) {
     (*next)(XFER_ERR_THREAD, NULL);
   }
 }
@@ -262,8 +264,7 @@ void xfer_read_all(xfer *x, void (*next)(size_t, char *))
   args->x = x;
   args->next = (void *)next;
 
-  pthread_t thr;
-  if (pthread_create(&thr, NULL, (void *)read_all_thr, args) != 0) {
+  if (spawn_thread(x, read_all_thr, args) != 0) {
     (*next)(XFER_ERR_THREAD, NULL);
   }
 }

@@ -11,23 +11,31 @@ static uiTableModel *model;
 static uiTableModelHandler modelHandler;
 static uiTable *table = NULL;
 
+static bool has_contents = false;
 static bool enabled = false;
 static file_rec *files = NULL;
 static int n_files = 0;
 
 static int modelNumRows(uiTableModelHandler *mh, uiTableModel *m);
 
-void file_list_disable()
+void file_list_clear()
 {
   for (int i = modelNumRows(&modelHandler, model) - 1; i >= 0; i--)
     uiTableModelRowDeleted(model, i);
-  enabled = false;
+  has_contents = false;
+}
+
+void file_list_set_enabled(bool _enabled)
+{
+  enabled = _enabled;
+  for (int i = modelNumRows(&modelHandler, model) - 1; i >= 0; i--)
+    uiTableModelRowChanged(model, i);
 }
 
 static int file_rec_cmp(const void *_a, const void *_b)
 {
   const file_rec *a = _a, *b = _b;
-  if (a->is_dir ^ b->is_dir) return 1 - 2 * a->is_dir;
+  if (a->is_dir != b->is_dir) return b->is_dir - a->is_dir;
   return strcmp(a->name, b->name);
 }
 
@@ -44,14 +52,15 @@ void file_list_reset(int n, file_rec *recs)
   }
   files = recs;
   n_files = n;
-  enabled = true;
+  has_contents = enabled = true;
   qsort(recs, n, sizeof(file_rec), file_rec_cmp);
   for (int i = 0; i < modelNumRows(&modelHandler, model); i++)
     uiTableModelRowInserted(model, i);
 }
 
 enum modelColumn {
-  COL_ICON = 0,
+  COL_ENABLED = 0,
+  COL_ICON,
   COL_NAME,
   COL_SIZE,
   COL_DATE,
@@ -75,6 +84,7 @@ static uiTableValueType modelColumnType(
 {
   switch (column) {
     case COL_ICON: return uiTableValueTypeImage;
+    case COL_ENABLED:
     case COL_RENAMABLE:
     case COL_DELETABLE:
       return uiTableValueTypeInt;
@@ -85,7 +95,7 @@ static uiTableValueType modelColumnType(
 
 static int modelNumRows(uiTableModelHandler *mh, uiTableModel *m)
 {
-  return (enabled ? n_files + 1 : 0);
+  return (has_contents ? n_files + 1 : 0);
 }
 
 static uiTableValue *modelCellValue(
@@ -97,8 +107,9 @@ static uiTableValue *modelCellValue(
       case COL_ICON: return uiNewTableValueImage(imgPlus);
       case COL_DOWNLOAD: return uiNewTableValueString("Upload");
       case COL_RENAME: return uiNewTableValueString("Make dir");
-      case COL_RENAMABLE: return uiNewTableValueInt(1);
-      case COL_DELETABLE: return uiNewTableValueInt(0);
+      case COL_ENABLED: return uiNewTableValueInt(enabled);
+      case COL_RENAMABLE: return uiNewTableValueInt(enabled && 1);
+      case COL_DELETABLE: return uiNewTableValueInt(enabled && 0);
       case COL_TEXTCOLOUR: return uiNewTableValueColor(0, 0, 0, 1);
       default: return uiNewTableValueString("");
     }
@@ -125,8 +136,10 @@ static uiTableValue *modelCellValue(
       return uiNewTableValueString(files[row].is_dir != 2 ? "Rename" : "");
     case COL_DELETE:
       return uiNewTableValueString(files[row].is_dir != 2 ? "Delete" : "");
-    case COL_RENAMABLE: return uiNewTableValueInt(files[row].is_dir != 2);
-    case COL_DELETABLE: return uiNewTableValueInt(files[row].is_dir != 2);
+    case COL_ENABLED: return uiNewTableValueInt(enabled);
+    case COL_RENAMABLE:
+    case COL_DELETABLE:
+      return uiNewTableValueInt(enabled && files[row].is_dir != 2);
     case COL_TEXTCOLOUR:
       return (files[row].is_dir == 1 ?
         uiNewTableValueColor(0, 0.3, 0.8, 1) :
@@ -180,7 +193,7 @@ uiTable *file_list_table()
   uiTableAppendTextColumn(table, "Modified at",
     COL_DATE, uiTableModelColumnNeverEditable, &p);
   uiTableAppendButtonColumn(table, "",
-    COL_DOWNLOAD, uiTableModelColumnAlwaysEditable);
+    COL_DOWNLOAD, COL_ENABLED);
   uiTableAppendButtonColumn(table, "",
     COL_RENAME, COL_RENAMABLE);
   uiTableAppendButtonColumn(table, "",
