@@ -371,6 +371,31 @@ static void mkd_1(int code, char *s)
   }
 }
 
+// Delete
+static void rm_1(int code, char *s);
+void do_rm(bool is_dir, const char *name)
+{
+  loading();
+  statusf("Removing \"%s\"", name);
+  char *s;
+  asprintf(&s, "%s %s\r\n", is_dir ? "RMD" : "DELE", name);
+  xfer_write(&x, s, NULL);
+  free(s);
+  xfer_read_mark(&x, rm_1);
+}
+static void rm_1(int code, char *s)
+{
+  done();
+  if (code == 250) {
+    status("Successfully removed");
+    do_list();
+  } else {
+    status((code == 450 || code == 550) ?
+      "Cannot delete: not available, no access, or directory non-empty" :
+      "Did not see a valid entry deletion result");
+  }
+}
+
 // Retrieve file
 // Non-reentrant
 static void retr_1();
@@ -543,6 +568,11 @@ void file_list_download(const struct file_rec_s *r)
 void file_list_mkdir(const char *name)
 {
   do_mkd(name);
+}
+
+void file_list_delete(bool is_dir, const char *name)
+{
+  do_rm(is_dir, name);
 }
 
 int main()

@@ -179,6 +179,9 @@ static void modelSetCellValue(
         if (!found) break;
       }
       file_list_mkdir(s);
+    } else {
+      // Delete
+      file_list_delete(files[row].is_dir != 0, files[row].name);
     }
   }
 }
