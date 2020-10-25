@@ -22,6 +22,7 @@ void file_list_reset(int n, file_rec *recs);
 // Externally implemented
 void file_list_rename(const char *from, const char *to);
 void file_list_download(const struct file_rec_s *r);
+void file_list_mkdir(const char *name);
 
 // Helper function
 static inline void get_size_str(char s[16], size_t x)

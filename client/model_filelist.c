@@ -35,7 +35,12 @@ void file_list_set_enabled(bool _enabled)
 static int file_rec_cmp(const void *_a, const void *_b)
 {
   const file_rec *a = _a, *b = _b;
-  if (a->is_dir != b->is_dir) return b->is_dir - a->is_dir;
+  int a_type = a->is_dir, b_type = b->is_dir;
+  if (a_type == 1 && memcmp(a->name, "new_folder_", strlen("new_folder_")) == 0)
+    a_type = -1;
+  if (b_type == 1 && memcmp(b->name, "new_folder_", strlen("new_folder_")) == 0)
+    b_type = -1;
+  if (a_type != b_type) return b_type - a_type;
   return strcmp(a->name, b->name);
 }
 
@@ -139,7 +144,10 @@ static uiTableValue *modelCellValue(
       return uiNewTableValueInt(enabled && files[row].is_dir != 2);
     case COL_TEXTCOLOUR:
       return (files[row].is_dir == 1 ?
-        uiNewTableValueColor(0, 0.3, 0.8, 1) :
+        (memcmp(files[row].name, "new_folder_", strlen("new_folder_")) == 0 ?
+          uiNewTableValueColor(1, 0.5, 0, 1) :
+          uiNewTableValueColor(0, 0.3, 0.8, 1)
+        ) :
         uiNewTableValueColor(0, 0, 0, 1));
     case COL_EMPTY: return uiNewTableValueString("");
   }
@@ -155,6 +163,23 @@ static void modelSetCellValue(
   } else if (col == COL_NAME) {
     const char *s = uiTableValueString(val);
     file_list_rename(files[row].name, s);
+  } else if (col == COL_DELETE) {
+    if (row == n_files) {
+      // Make directory
+      // Find a feasible name
+      char s[32];
+      for (int i = 1; ; i++) {
+        snprintf(s, sizeof s, "new_folder_%d", i);
+        bool found = false;
+        for (int j = 0; j < n_files; j++)
+          if (strcmp(s, files[j].name) == 0) {
+            found = true;
+            break;
+          }
+        if (!found) break;
+      }
+      file_list_mkdir(s);
+    }
   }
 }
 

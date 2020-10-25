@@ -290,7 +290,9 @@ static void cwd_1(int code, char *s)
     do_list();
   } else {
     done();
-    status("Did not see a valid working directory change result");
+    status((code == 450 || code == 550) ?
+      "Cannot change directory: not available or no access" :
+      "Did not see a valid working directory change result");
   }
 }
 
@@ -322,7 +324,9 @@ static void rename_1(int code, char *s)
     xfer_read_mark(&x, rename_2);
   } else {
     done();
-    status("Did not see a valid rename-from response");
+    status((code == 450 || code == 550) ?
+      "Cannot rename file: not available or no access" :
+      "Did not see a valid rename-from response");
     free(rename_from);
     free(rename_to);
   }
@@ -334,10 +338,37 @@ static void rename_2(int code, char *s)
     do_list();
   } else {
     done();
-    status("Did not see a valid rename-to response");
+    status((code == 450 || code == 550) ?
+      "Cannot rename file: not available or no access" :
+      "Did not see a valid rename-to response");
   }
   free(rename_from);
   free(rename_to);
+}
+
+// Rename
+static void mkd_1(int code, char *s);
+void do_mkd(const char *name)
+{
+  loading();
+  statusf("Making directory \"%s\"", name);
+  char *s;
+  asprintf(&s, "MKD %s\r\n", name);
+  xfer_write(&x, s, NULL);
+  free(s);
+  xfer_read_mark(&x, mkd_1);
+}
+static void mkd_1(int code, char *s)
+{
+  done();
+  if (code == 250) {
+    status("Successfully created new directory");
+    do_list();
+  } else {
+    status((code == 450 || code == 550) ?
+      "Cannot create directory: not available or no access" :
+      "Did not see a valid directory creation result");
+  }
 }
 
 // Retrieve file
@@ -507,6 +538,11 @@ void file_list_download(const struct file_rec_s *r)
     if (local_path != NULL)
       do_retr(r->name, r->size, local_path);
   }
+}
+
+void file_list_mkdir(const char *name)
+{
+  do_mkd(name);
 }
 
 int main()
