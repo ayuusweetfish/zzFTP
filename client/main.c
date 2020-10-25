@@ -64,9 +64,9 @@ static inline void status(const char *s)
   uiLabelSetText(lblStatus, s);
 }
 #define statusf(...) do { \
-  char s[128]; \
-  snprintf(s, 128, __VA_ARGS__); \
-  status(s); \
+  char _s[128]; \
+  snprintf(_s, 128, __VA_ARGS__); \
+  status(_s); \
 } while (0)
 
 // Send/receive data
@@ -586,6 +586,7 @@ void connection_setup(int code)
   }
 }
 
+void disconn_1(int code, char *s);
 void btnConnClick(uiButton *_b, void *_u)
 {
   if (!connected) {
@@ -601,14 +602,28 @@ void btnConnClick(uiButton *_b, void *_u)
     free(host);
   } else {
     // Disconnect
-    xfer_deinit(&x);
-    done();
-    status("Disconnected");
-    connected = false;
-    uiControlEnable(uiControl(boxConn));
-    uiButtonSetText(btnConn, "Connect");
-    file_list_clear();
+    loading();
+    status("Disconnecting");
+    xfer_write(&x, "QUIT\r\n", NULL);
+    xfer_read_mark(&x, disconn_1);
   }
+}
+void disconn_1(int code, char *s)
+{
+  if (code == 221) {
+    char *t = strrchr(s, '\0');
+    while (t > s && isspace(*(t - 1))) t--;
+    *t = '\0';
+    statusf("Disconnected: %s", s);
+  } else {
+    status("Disconnected");
+  }
+  xfer_deinit(&x);
+  done();
+  connected = false;
+  uiControlEnable(uiControl(boxConn));
+  uiButtonSetText(btnConn, "Connect");
+  file_list_clear();
 }
 
 void btnModeClick(uiButton *b, void *_u)

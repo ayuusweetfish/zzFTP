@@ -18,12 +18,16 @@ void panic(const char *msg)
 
 void warn(const char *msg)
 {
+#ifdef LOG_WARN
   fprintf(stderr, "warn  | %s: errno = %d (%s)\n", msg, errno, strerror(errno));
+#endif
 }
 
 void info(const char *msg)
 {
+#ifdef LOG_INFO
   fprintf(stderr, "info  | %s\n", msg);
+#endif
 }
 
 size_t read_all(int fd, void *buf, size_t len)

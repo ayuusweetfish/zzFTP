@@ -60,7 +60,7 @@ static const char *WELCOME_MSG =
 ;
 
 static const char *GOODBYE_MSG =
-  "Goodbye";
+  "Goodbye \\(^ ^)/~";
 
 void client_run_loop(client *c)
 {
