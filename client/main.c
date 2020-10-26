@@ -533,7 +533,7 @@ static void auth_1(int code, char *s)
     asprintf(&s, "USER %s\r\n", user);
     xfer_write(&x, s, NULL);
     free(s);
-    free(user);
+    uiFreeText(user);
     xfer_read_mark(&x, auth_2);
   } else {
     done();
@@ -548,7 +548,7 @@ static void auth_2(int code, char *s)
     asprintf(&s, "PASS %s\r\n", pass);
     xfer_write(&x, s, NULL);
     free(s);
-    free(pass);
+    uiFreeText(pass);
     xfer_read_mark(&x, auth_3);
   } else {
     done();
@@ -592,14 +592,18 @@ void btnConnClick(uiButton *_b, void *_u)
   if (!connected) {
     // Connect
     char *host = uiEntryText(entHost);
+    char *pass = uiEntryText(entPass);
     int port = uiSpinboxValue(entPort);
 
     loading();
     statusf("Connecting to %s", host);
     uiControlDisable(uiControl(boxConn));
+    // Workaround for the password entry losing contents after being disabled
+    uiEntrySetText(entPass, pass);
     xfer_init(&x, host, port, &connection_setup);
 
-    free(host);
+    uiFreeText(host);
+    uiFreeText(pass);
   } else {
     // Disconnect
     loading();
