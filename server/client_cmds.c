@@ -363,6 +363,22 @@ static cmd_result handler_LIST(client *c, const char *arg)
   return (free(cmd), CMD_RESULT_DONE);
 }
 
+static cmd_result handler_REST(client *c, const char *arg)
+{
+  ignore_if_xfer();
+  auth();
+
+  size_t offs;
+  if (sscanf(arg, "%zd", &offs) != 1) {
+    mark(501, "Invalid mark. Expected an integer.");
+    return CMD_RESULT_DONE;
+  }
+
+  c->rest_offs = offs;
+  markf(350, "Restart position accepted (%zd).", offs);
+  return CMD_RESULT_DONE;
+}
+
 static cmd_result handler_RETR(client *c, const char *arg)
 {
   ignore_if_xfer();
@@ -381,6 +397,9 @@ static cmd_result handler_RETR(client *c, const char *arg)
     return (free(d), CMD_RESULT_DONE);
   }
 
+  fseek(f, c->rest_offs, SEEK_SET);
+  c->rest_offs = 0;
+
   signal_file(DATA_SEND_FILE);
 
   mark(150, "File contents are being sent over the data connection.");
@@ -395,7 +414,10 @@ static cmd_result handler_STOR(client *c, const char *arg)
 
   char *d; full_path(d);
 
-  FILE *f = fopen(d + 1, "w");
+  truncate(d + 1, c->rest_offs);
+  c->rest_offs = 0;
+
+  FILE *f = fopen(d + 1, "a");
   if (f == NULL) {
     mark(550, "Cannot write to file.");
     return (free(d), CMD_RESULT_DONE);
@@ -443,6 +465,7 @@ cmd_result process_command(client *c, const char *verb, const char *arg)
   def_cmd(RNTO)
   def_cmd(DELE)
   def_cmd(LIST)
+  def_cmd(REST)
   def_cmd(RETR)
   def_cmd(STOR)
   def_cmd(ABOR)

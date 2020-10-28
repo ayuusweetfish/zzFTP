@@ -23,6 +23,7 @@ client *client_create(int sock_ctl)
 
   c->wd = strdup("/");
   c->rnfr = NULL;
+  c->rest_offs = 0;
 
   pthread_mutex_init(&c->mutex_dat, NULL);
   pthread_cond_init(&c->cond_dat, NULL);

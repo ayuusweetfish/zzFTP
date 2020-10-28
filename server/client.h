@@ -26,6 +26,7 @@ typedef struct client_s {
 
   char *wd;
   char *rnfr;
+  size_t rest_offs;
 
   // Port mode: client address and port
   // Passive mode: local address and port
