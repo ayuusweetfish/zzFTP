@@ -136,6 +136,7 @@ static cmd_result handler_PORT(client *c, const char *arg)
 {
   ignore_if_xfer();
   auth();
+  client_close_threads(c);
 
   unsigned x[6];
   if (sscanf(arg, "%u,%u,%u,%u,%u,%u",
@@ -359,9 +360,9 @@ static cmd_result handler_LIST(client *c, const char *arg)
     return (free(cmd), CMD_RESULT_DONE);
   }
 
+  mark(150, "Directory listing is being sent over the data connection.");
   signal_file(DATA_SEND_PIPE);
 
-  mark(150, "Directory listing is being sent over the data connection.");
   return (free(cmd), CMD_RESULT_DONE);
 }
 
@@ -402,9 +403,9 @@ static cmd_result handler_RETR(client *c, const char *arg)
   fseek(f, c->rest_offs, SEEK_SET);
   c->rest_offs = 0;
 
+  mark(150, "File contents are being sent over the data connection.");
   signal_file(DATA_SEND_FILE);
 
-  mark(150, "File contents are being sent over the data connection.");
   return (free(d), CMD_RESULT_DONE);
 }
 
@@ -416,7 +417,7 @@ static cmd_result handler_STOR(client *c, const char *arg)
 
   char *d; full_path(d);
 
-  truncate(d + 1, c->rest_offs);
+  if (truncate(d + 1, c->rest_offs) != 0) { }
   c->rest_offs = 0;
 
   FILE *f = fopen(d + 1, "a");
@@ -425,9 +426,9 @@ static cmd_result handler_STOR(client *c, const char *arg)
     return (free(d), CMD_RESULT_DONE);
   }
 
+  mark(150, "Send file contents over the data connection.");
   signal_file(DATA_RECV_FILE);
 
-  mark(150, "Send file contents over the data connection.");
   return (free(d), CMD_RESULT_DONE);
 }
 

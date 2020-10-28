@@ -39,13 +39,13 @@ int main(int argc, char *argv[])
     if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "-help") == 0) {
       print_usage(argv[0], 0);
     } else if (strcmp(argv[i], "-port") == 0) {
-      if (i + 1 >= argc) print_usage(argv[0], 1);
-      if (sscanf(argv[i + 1], "%d", &port) != 1 ||
+      if (++i >= argc) print_usage(argv[0], 1);
+      if (sscanf(argv[i], "%d", &port) != 1 ||
           port < 0 || port >= 65535)
         print_usage(argv[0], 1);
     } else if (strcmp(argv[i], "-root") == 0) {
-      if (i + 1 >= argc) print_usage(argv[0], 1);
-      root = argv[i + 1];
+      if (++i >= argc) print_usage(argv[0], 1);
+      root = argv[i];
     }
   }
 

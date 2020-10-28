@@ -8,7 +8,8 @@
 char *path_cat(const char *wd, const char *rel)
 {
   if (wd[0] != '/') return NULL;
-  char *buf = malloc(strlen(wd) + strlen(rel));
+  // +2 for the slash and the terminating NUL
+  char *buf = malloc(strlen(wd) + strlen(rel) + 2);
   if (buf == NULL) return NULL;
 #define meh (free(buf), NULL)
 
