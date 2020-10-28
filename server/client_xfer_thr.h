@@ -14,7 +14,10 @@ static inline void double_and_limit(int *x, int limit)
   *x = (new_x < limit ? new_x : limit);
 }
 
-static inline bool process_block(
+// 0 - Continue
+// 1 - Completed normally
+// 2 - Aborted abnormally
+static inline int process_block(
   client *c,
   int conn_fd, enum dat_type_t dat_type, FILE *fp, void *buf,
   int *process_sleep)
@@ -46,18 +49,16 @@ static inline bool process_block(
     xfer_complete = (bytes_read == 0);
   }
   if (xfer_complete) {
-    mark(226, "Transfer complete.");
-    return false;
+    return 1;
   } else if (ferror(fp) != 0) {
-    mark(451, "Transfer aborted by internal I/O error.");
-    return false;
+    return 2;
   }
-  return true;
+  return 0;
 }
 
 static inline void cleanup(
   client *c,
-  int conn_fd, enum dat_type_t dat_type, FILE *fp, void *buf)
+  int conn_fd, enum dat_type_t dat_type, FILE *fp, void *buf, int st)
 {
   if (conn_fd != -1) close(conn_fd);
 
@@ -71,6 +72,11 @@ static inline void cleanup(
   c->state = CLST_READY;
 
   info("data thread terminated");
+
+  if (st == 1)
+    mark(226, "Transfer complete.");
+  else if (st == 2)
+    mark(451, "Transfer aborted by internal I/O error.");
 }
 
 // Active mode
@@ -83,6 +89,7 @@ static void *active_data(void *arg)
   FILE *fp = NULL;
   enum dat_type_t dat_type = DATA_UNDEFINED;
   void *buf = malloc(BUF_SIZE);
+  int st = 0;
 
   // Wait for the file
   crit({
@@ -116,12 +123,13 @@ static void *active_data(void *arg)
     crit({ running = c->thr_dat_running; });
     if (!running) break;
 
-    if (!process_block(c, conn_fd, dat_type, fp, buf, &process_sleep))
+    if ((st = process_block(c, conn_fd, dat_type, fp, buf, &process_sleep))
+        != 0)
       break;
   }
 
 _cleanup:
-  cleanup(c, conn_fd, dat_type, fp, buf);
+  cleanup(c, conn_fd, dat_type, fp, buf, st);
   return NULL;
 }
 
@@ -142,6 +150,7 @@ static void *passive_data(void *arg)
   FILE *fp = NULL;
   enum dat_type_t dat_type = DATA_UNDEFINED;
   void *buf = malloc(BUF_SIZE);
+  int st = 0;
 
   int accept_sleep = 1000;
   int process_sleep = 1000;
@@ -167,7 +176,8 @@ static void *passive_data(void *arg)
       if (fp == NULL)
         crit({ fp = c->dat_fp; dat_type = c->dat_type; });
       if (fp != NULL) {
-        if (!process_block(c, conn_fd, dat_type, fp, buf, &process_sleep))
+        if ((st = process_block(c, conn_fd, dat_type, fp, buf, &process_sleep))
+            != 0)
           break;
       } else {
         // Connected and no file present. Detect disconnection.
@@ -187,7 +197,7 @@ static void *passive_data(void *arg)
   }
 
   close(sock_fd);
-  cleanup(c, conn_fd, dat_type, fp, buf);
+  cleanup(c, conn_fd, dat_type, fp, buf, st);
   return NULL;
 }
 
