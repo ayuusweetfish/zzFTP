@@ -42,8 +42,10 @@
   return CMD_RESULT_SHUTDOWN; \
 } while (0)
 
-#define ignore_if_xfer() \
-  if (client_xfer_in_progress(c)) return CMD_RESULT_DONE
+#define ignore_if_xfer() do if (client_xfer_in_progress(c)) { \
+  mark(503, "Data transfer in progress, ignored."); \
+  return CMD_RESULT_DONE; \
+} while (0)
 
 // Reference: RFC 954, 5.4, Command-Reply Sequences (pp. 48-52)
 

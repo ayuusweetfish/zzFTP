@@ -33,6 +33,8 @@ typedef struct client_s {
   uint8_t addr[4];
   uint16_t port;
 
+  pthread_mutex_t mutex_ctl;
+
   pthread_mutex_t mutex_dat;
   pthread_cond_t cond_dat;
   pthread_t thr_dat;
@@ -62,7 +64,11 @@ typedef enum cmd_result_e {
 
 cmd_result process_command(client *c, const char *verb, const char *arg);
 
-#define mark(_code, _str) send_mark(c->sock_ctl, _code, _str)
+#define mark(_code, _str) do { \
+  pthread_mutex_lock(&c->mutex_ctl); \
+  send_mark(c->sock_ctl, _code, _str); \
+  pthread_mutex_unlock(&c->mutex_ctl); \
+} while (0)
 #define markf(_code, ...) do { \
   char s[256]; \
   snprintf(s, sizeof s, __VA_ARGS__); \

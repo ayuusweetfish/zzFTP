@@ -25,6 +25,8 @@ client *client_create(int sock_ctl)
   c->rnfr = NULL;
   c->rest_offs = 0;
 
+  pthread_mutex_init(&c->mutex_ctl, NULL);
+
   pthread_mutex_init(&c->mutex_dat, NULL);
   pthread_cond_init(&c->cond_dat, NULL);
   c->thr_dat_running = false;
@@ -45,7 +47,9 @@ void client_close(client *c)
   free(c->wd);
   if (c->rnfr != NULL) free(c->rnfr);
 
+  pthread_mutex_destroy(&c->mutex_ctl);
   pthread_mutex_destroy(&c->mutex_dat);
+  pthread_cond_destroy(&c->cond_dat);
 
   free(c);
 }
