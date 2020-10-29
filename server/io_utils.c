@@ -36,6 +36,10 @@ size_t read_all(int fd, void *buf, size_t len)
   while (tot < len) {
     result = read(fd, buf, len - tot);
     if (result == -1) {
+      if (errno == EAGAIN) {
+        usleep(1000);
+        continue;
+      }
       warn("read() failed");
       return tot;
     } else if (result == 0) {
@@ -53,6 +57,10 @@ size_t write_all(int fd, const void *buf, size_t len)
   while (len != 0) {
     result = write(fd, buf, len);
     if (result == -1) {
+      if (errno == EAGAIN) {
+        usleep(1000);
+        continue;
+      }
       warn("write() failed");
       return len;
     }

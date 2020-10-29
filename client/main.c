@@ -68,6 +68,11 @@ static inline void status(const char *s)
   snprintf(_s, 128, __VA_ARGS__); \
   status(_s); \
 } while (0)
+#define instant_statusf(...) do { \
+  char _s[128]; \
+  snprintf(_s, 128, __VA_ARGS__); \
+  uiLabelSetText(lblStatus, _s); \
+} while (0)
 
 // Send/receive data
 // If `fd` is positive, the data is read from the descriptor and sent,
@@ -441,7 +446,7 @@ static void retr_2(size_t len, char *data)
   } else {
     char size_xferred[16];
     get_size_str(size_xferred, len);
-    statusf("Downloading \"%s\" (%s / %s)",
+    instant_statusf("Downloading \"%s\" (%s / %s)",
       retr_name, size_xferred, retr_size_str);
     progress((float)len / retr_size);
   }
@@ -498,7 +503,7 @@ static void stor_2(size_t len, char *data)
   } else {
     char size_xferred[16];
     get_size_str(size_xferred, len);
-    statusf("Uploading \"%s\" (%s / %s)",
+    instant_statusf("Uploading \"%s\" (%s / %s)",
       stor_name, size_xferred, stor_size_str);
     progress((float)len / stor_size);
   }
