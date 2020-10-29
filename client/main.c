@@ -275,6 +275,39 @@ static void list_3(size_t len, char *data)
   file_list_reset(actual_count, recs);
 }
 
+// System setup
+static void sys_1(int code, char *s);
+static void sys_2(int code, char *s);
+void do_sys_setup()
+{
+  loading();
+  status("Setting type to binary (image)");
+  xfer_write(&x, "TYPE I\r\n", NULL);
+  xfer_read_mark(&x, sys_1);
+}
+static void sys_1(int code, char *s)
+{
+  if (code == 200) {
+    xfer_write(&x, "SYST\r\n", NULL);
+    xfer_read_mark(&x, sys_2);
+  } else {
+    done();
+    status("Did not see a valid transmission type response");
+  }
+}
+static void sys_2(int code, char *s)
+{
+  if (code == 215) {
+    char *p = strrchr(s, '\0') - 1;
+    while (p > s && isspace(*p)) *(p--) = '\0';
+    statusf("System type is %s", s);
+    do_list();
+  } else {
+    done();
+    status("Did not see a valid system type response");
+  }
+}
+
 // Change directory
 static void cwd_1(int code, char *s);
 void do_cwd(const char *name)
@@ -568,7 +601,7 @@ static void auth_3(int code, char *s)
     status("Logged in");
     connected = true;
     uiButtonSetText(btnConn, "Disconnect");
-    do_list();
+    do_sys_setup();
   } else {
     status(code == 530 ?
       "Incorrect credentials" :
